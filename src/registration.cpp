@@ -154,17 +154,25 @@ void RegistrationImpl::apply(const Frame *rgb, const Frame *depth, Frame *undist
   const int offset_filter_map = 1920 * filter_height_half;
 
   // map for storing the min z values used for each color pixel
-  float *filter_map = NULL;
+  std::unique_ptr<float[]> filter_map_storage;
+  float *filter_map = nullptr;
   // pointer to the beginning of the important data
-  float *p_filter_map = NULL;
+  float *p_filter_map = nullptr;
 
   // map for storing the color offset for each depth pixel
-  int *depth_to_c_off = color_depth_map ? color_depth_map : new int[size_depth];
+  auto depth_to_c_off_storage = color_depth_map ? std::unique_ptr<int[]>() : std::make_unique<int[]>(size_depth);
+  int *depth_to_c_off = color_depth_map ? color_depth_map : depth_to_c_off_storage.get();
   int *map_c_off = depth_to_c_off;
 
   // initializing the depth_map with values outside of the Kinect2 range
   if(enable_filter){
-    filter_map = bigdepth ? (float*)bigdepth->data : new float[size_filter_map];
+    if(bigdepth)
+      filter_map = (float*)bigdepth->data;
+    else
+    {
+      filter_map_storage = std::make_unique<float[]>(size_filter_map);
+      filter_map = filter_map_storage.get();
+    }
     p_filter_map = filter_map + offset_filter_map;
 
     for(float *it = filter_map, *end = filter_map + size_filter_map; it != end; ++it){
@@ -257,8 +265,6 @@ void RegistrationImpl::apply(const Frame *rgb, const Frame *depth, Frame *undist
       // check for allowed depth noise
       *registered_data = (z - min_z) / z > filter_tolerance ? 0 : *(rgb_data + c_off);
     }
-
-    if (!bigdepth) delete[] filter_map;
   }
   else
   {
@@ -270,7 +276,6 @@ void RegistrationImpl::apply(const Frame *rgb, const Frame *depth, Frame *undist
       *registered_data = c_off < 0 ? 0 : *(rgb_data + c_off);
     }
   }
-  if (!color_depth_map) delete[] depth_to_c_off;
 }
 
 void Registration::undistortDepth(const Frame *depth, Frame *undistorted) const
@@ -360,11 +365,10 @@ void RegistrationImpl::getPointXYZ (const Frame *undistorted, int r, int c, floa
 }
 
 Registration::Registration(Freenect2Device::IrCameraParams depth_p, Freenect2Device::ColorCameraParams rgb_p):
-  impl_(new RegistrationImpl(depth_p, rgb_p)) {}
+  impl_(std::make_unique<RegistrationImpl>(depth_p, rgb_p)) {}
 
 Registration::~Registration()
 {
-  delete impl_;
 }
 
 RegistrationImpl::RegistrationImpl(Freenect2Device::IrCameraParams depth_p, Freenect2Device::ColorCameraParams rgb_p):

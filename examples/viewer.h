@@ -5,6 +5,7 @@
 #include <libfreenect2/frame_listener.hpp>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <map>
 
 #include "flextGL.h"
@@ -162,18 +163,18 @@ struct ShaderProgram : public WithOpenGLBindings
     {
     }
 
-    void setVertexShader(const std::string& src)
+    void setVertexShader(std::string_view src)
     {
-        const char* src_ = src.c_str();
-        int length_ = src.length();
+        const char* src_ = src.data();
+        int length_ = static_cast<int>(src.size());
         vertex_shader = gl()->glCreateShader(GL_VERTEX_SHADER);
         gl()->glShaderSource(vertex_shader, 1, &src_, &length_);
     }
 
-    void setFragmentShader(const std::string& src)
+    void setFragmentShader(std::string_view src)
     {
-        const char* src_ = src.c_str();
-        int length_ = src.length();
+        const char* src_ = src.data();
+        int length_ = static_cast<int>(src.size());
         fragment_shader = gl()->glCreateShader(GL_FRAGMENT_SHADER);
         gl()->glShaderSource(fragment_shader, 1, &src_, &length_);
     }

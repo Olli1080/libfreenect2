@@ -22,7 +22,8 @@
 #include "PracticalSocket.h"
 
 #ifdef WIN32
-  #include <winsock.h>         // For socket(), connect(), send(), and recv()
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
   typedef int socklen_t;
   typedef char raw_type;       // Type used for raw data on this platform
 #else
@@ -36,9 +37,7 @@
   typedef void raw_type;       // Type used for raw data on this platform
 #endif
 
-#include <errno.h>             // For errno
-
-using namespace std;
+#include <errno.h>
 
 #ifdef WIN32
 static bool initialized = false;

@@ -31,11 +31,13 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <memory>
+#include <vector>
 
 #include <libfreenect2/config.h>
-#include <libfreenect2/libfreenect2.hpp>
+#include <libfreenect2/depth_processor_config.h>
 #include <libfreenect2/frame_listener.hpp>
-#include <libfreenect2/packet_processor.h>
+#include <internal/libfreenect2/packet_processor.h>
 
 namespace libfreenect2
 {
@@ -57,7 +59,7 @@ typedef PacketProcessor<DepthPacket> BaseDepthPacketProcessor;
 class DepthPacketProcessor : public BaseDepthPacketProcessor
 {
 public:
-  typedef Freenect2Device::Config Config;
+  typedef DepthProcessorConfig Config;
 
   /** Parameters of depth processing. */
   struct Parameters
@@ -104,7 +106,7 @@ public:
   };
 
   DepthPacketProcessor();
-  virtual ~DepthPacketProcessor();
+  ~DepthPacketProcessor() noexcept override;
 
   virtual void setFrameListener(libfreenect2::FrameListener *listener);
   virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
@@ -121,29 +123,6 @@ protected:
   libfreenect2::FrameListener *listener_;
 };
 
-#ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
-class OpenGLDepthPacketProcessorImpl;
-
-/** Depth packet processor using OpenGL. */
-class OpenGLDepthPacketProcessor : public DepthPacketProcessor
-{
-public:
-  OpenGLDepthPacketProcessor(void *parent_opengl_context_ptr, bool debug);
-  virtual ~OpenGLDepthPacketProcessor();
-  virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
-
-  virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
-
-  virtual void loadXZTables(const float *xtable, const float *ztable);
-  virtual void loadLookupTable(const short *lut);
-
-  virtual const char *name() { return "OpenGL"; }
-  virtual void process(const DepthPacket &packet);
-private:
-  OpenGLDepthPacketProcessorImpl *impl_;
-};
-#endif // LIBFREENECT2_WITH_OPENGL_SUPPORT
-
 // TODO: push this to some internal namespace
 class CpuDepthPacketProcessorImpl;
 
@@ -152,145 +131,31 @@ class CpuDepthPacketProcessor : public DepthPacketProcessor
 {
 public:
   CpuDepthPacketProcessor();
-  virtual ~CpuDepthPacketProcessor();
-  virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
+  ~CpuDepthPacketProcessor() noexcept override;
+  void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config) override;
 
-  virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
+  void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length) override;
 
-  virtual void loadXZTables(const float *xtable, const float *ztable);
-  virtual void loadLookupTable(const short *lut);
+  void loadXZTables(const float *xtable, const float *ztable) override;
+  void loadLookupTable(const short *lut) override;
 
-  virtual const char *name() { return "CPU"; }
-  virtual void process(const DepthPacket &packet);
+  std::string_view name() override { return "CPU"; }
+  void process(const DepthPacket &packet) override;
 private:
-  CpuDepthPacketProcessorImpl *impl_;
+  std::unique_ptr<CpuDepthPacketProcessorImpl> impl_;
 };
-
-#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
-class OpenCLDepthPacketProcessorImpl;
-
-/** Depth packet processor using OpenCL. */
-class OpenCLDepthPacketProcessor : public DepthPacketProcessor
-{
-public:
-  OpenCLDepthPacketProcessor(const int deviceId = -1);
-  virtual ~OpenCLDepthPacketProcessor();
-  virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
-
-  virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
-
-  virtual void loadXZTables(const float *xtable, const float *ztable);
-  virtual void loadLookupTable(const short *lut);
-
-  virtual bool good();
-  virtual const char *name() { return "OpenCL"; }
-
-  virtual void process(const DepthPacket &packet);
-protected:
-  virtual Allocator *getAllocator();
-private:
-  OpenCLDepthPacketProcessorImpl *impl_;
-};
-
-/*
- * The class below implement a depth packet processor using the phase unwrapping
- * algorithm described in the paper "Efficient Phase Unwrapping using Kernel
- * Density Estimation", ECCV 2016, Felix Järemo Lawin, Per-Erik Forssen and
- * Hannes Ovren, see http://www.cvl.isy.liu.se/research/datasets/kinect2-dataset/.
- */
-class OpenCLKdeDepthPacketProcessorImpl;
-
-/** Depth packet processor using OpenCL. */
-class OpenCLKdeDepthPacketProcessor : public DepthPacketProcessor
-{
-public:
-  OpenCLKdeDepthPacketProcessor(const int deviceId = -1);
-  virtual ~OpenCLKdeDepthPacketProcessor();
-  virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
-
-  virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
-
-  virtual void loadXZTables(const float *xtable, const float *ztable);
-  virtual void loadLookupTable(const short *lut);
-
-  virtual bool good();
-  virtual const char *name() { return "OpenCLKde"; }
-
-  virtual void process(const DepthPacket &packet);
-protected:
-  virtual Allocator *getAllocator();
-private:
-  OpenCLKdeDepthPacketProcessorImpl *impl_;
-};
-#endif // LIBFREENECT2_WITH_OPENCL_SUPPORT
-
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-class CudaDepthPacketProcessorImpl;
-
-class CudaDepthPacketProcessor : public DepthPacketProcessor
-{
-public:
-  CudaDepthPacketProcessor(const int deviceId = -1);
-  virtual ~CudaDepthPacketProcessor();
-  virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
-
-  virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
-
-  virtual void loadXZTables(const float *xtable, const float *ztable);
-  virtual void loadLookupTable(const short *lut);
-
-  virtual bool good();
-  virtual const char *name() { return "CUDA"; }
-
-  virtual void process(const DepthPacket &packet);
-protected:
-  virtual Allocator *getAllocator();
-private:
-  CudaDepthPacketProcessorImpl *impl_;
-};
-
-/*
- * The class below implement a depth packet processor using the phase unwrapping
- * algorithm described in the paper "Efficient Phase Unwrapping using Kernel
- * Density Estimation", ECCV 2016, Felix Järemo Lawin, Per-Erik Forssen and
- * Hannes Ovren, see http://www.cvl.isy.liu.se/research/datasets/kinect2-dataset/.
- */
-class CudaKdeDepthPacketProcessorImpl;
-
-class CudaKdeDepthPacketProcessor : public DepthPacketProcessor
-{
-public:
-  CudaKdeDepthPacketProcessor(const int deviceId = -1);
-  virtual ~CudaKdeDepthPacketProcessor();
-  virtual void setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config);
-
-  virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
-
-  virtual void loadXZTables(const float *xtable, const float *ztable);
-  virtual void loadLookupTable(const short *lut);
-
-  virtual bool good();
-  virtual const char *name() { return "CUDAKde"; }
-
-  virtual void process(const DepthPacket &packet);
-protected:
-  virtual Allocator *getAllocator();
-private:
-  CudaKdeDepthPacketProcessorImpl *impl_;
-};
-#endif // LIBFREENECT2_WITH_CUDA_SUPPORT
 
 class DumpDepthPacketProcessor : public DepthPacketProcessor
 {
  public:
   DumpDepthPacketProcessor();
-  virtual ~DumpDepthPacketProcessor();
+  ~DumpDepthPacketProcessor() noexcept override;
 
-  virtual void process(const DepthPacket &packet);
+  void process(const DepthPacket &packet) override;
 
-  virtual void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length);
-  virtual void loadXZTables(const float *xtable, const float *ztable);
-  virtual void loadLookupTable(const short *lut);
+  void loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length) override;
+  void loadXZTables(const float *xtable, const float *ztable) override;
+  void loadLookupTable(const short *lut) override;
 
   const unsigned char* getP0Tables();
 
@@ -300,12 +165,12 @@ class DumpDepthPacketProcessor : public DepthPacketProcessor
   const short* getLookupTable();
 
  protected:
-  unsigned char* p0table_;
+  std::vector<unsigned char> p0table_;
 
-  float* xtable_;
-  float* ztable_;
+  std::vector<float> xtable_;
+  std::vector<float> ztable_;
   
-  short* lut_;
+  std::vector<short> lut_;
 };
 
 } /* namespace libfreenect2 */

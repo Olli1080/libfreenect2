@@ -1,0 +1,130 @@
+{
+  "version": 7,
+  "configurePresets": [
+    {
+      "name": "default",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/default",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release;RelWithDebInfo",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/${presetName}",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "vcpkg",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/vcpkg",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/externals/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/${presetName}"
+      }
+    },
+    {
+      "name": "vcpkg-linux",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/vcpkg-linux",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/externals/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/${presetName}"
+      }
+    },
+    {
+      "name": "no-backends",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/no-backends",
+      "cacheVariables": {
+        "ENABLE_OPENCL": "OFF",
+        "ENABLE_CUDA": "OFF",
+        "ENABLE_OPENGL": "OFF",
+        "BUILD_EXAMPLES": "OFF"
+      }
+    },
+    {
+      "name": "cuda-only",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/cuda-only",
+      "cacheVariables": {
+        "ENABLE_OPENCL": "OFF",
+        "ENABLE_OPENGL": "OFF",
+        "ENABLE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "vs2026",
+      "generator": "Visual Studio 18 2026",
+      "binaryDir": "${sourceDir}/build/vs2026",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release;RelWithDebInfo",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/${presetName}"
+      }
+    },
+    {
+      "name": "vs2026-no-backends",
+      "inherits": "vs2026",
+      "binaryDir": "${sourceDir}/build/vs2026-no-backends",
+      "cacheVariables": {
+        "ENABLE_OPENCL": "OFF",
+        "ENABLE_CUDA": "OFF",
+        "ENABLE_OPENGL": "OFF",
+        "BUILD_EXAMPLES": "OFF"
+      }
+    },
+    {
+      "name": "vs2026-vcpkg",
+      "inherits": "vs2026",
+      "binaryDir": "${sourceDir}/build/vs2026-vcpkg",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/externals/vcpkg/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "vs2026-vcpkg-all",
+      "inherits": "vs2026-vcpkg",
+      "binaryDir": "${sourceDir}/build/vs2026-vcpkg-all",
+      "cacheVariables": {
+        "ENABLE_OPENCL": "ON",
+        "ENABLE_CUDA": "ON",
+        "ENABLE_OPENGL": "ON",
+        "BUILD_EXAMPLES": "ON",
+        "BUILD_PCL_EXAMPLE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default-release",
+      "configurePreset": "default",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "vcpkg-release",
+      "configurePreset": "vcpkg",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "vs2026-release",
+      "configurePreset": "vs2026",
+      "configuration": "Release"
+    },
+    {
+      "name": "vs2026-rwd",
+      "configurePreset": "vs2026",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "vs2026-no-backends-release",
+      "configurePreset": "vs2026-no-backends",
+      "configuration": "Release"
+    }
+  ]
+}

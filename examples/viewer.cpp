@@ -35,8 +35,8 @@ void Viewer::initialize()
 #endif
     //glfwWindowHint(GLFW_VISIBLE, debug ? GL_TRUE : GL_FALSE);
 
-    window = glfwCreateWindow(win_width*2, win_height*2, "Viewer (press ESC to exit)", 0, NULL);
-    if (window == NULL)
+    window = glfwCreateWindow(win_width*2, win_height*2, "Viewer (press ESC to exit)", nullptr, nullptr);
+    if (window == nullptr)
     {
         std::cerr << "Failed to create opengl window." << std::endl;
         exit(-1);
@@ -193,7 +193,7 @@ bool Viewer::render()
         gl()->glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
         GLint position_attr = renderShader.getAttributeLocation("Position");
-        gl()->glVertexAttribPointer(position_attr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)0);
+        gl()->glVertexAttribPointer(position_attr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)nullptr);
         gl()->glEnableVertexAttribArray(position_attr);
 
         GLint texcoord_attr = renderShader.getAttributeLocation("TexCoord");
@@ -206,7 +206,7 @@ bool Viewer::render()
             renderShader.use();
 
             rgb.allocate(frame->width, frame->height);
-            std::copy(frame->data, frame->data + frame->width * frame->height * frame->bytes_per_pixel, rgb.data);
+            std::copy_n(frame->data, frame->width * frame->height * frame->bytes_per_pixel, rgb.data);
             rgb.flipY();
             rgb.upload();
             glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -219,7 +219,7 @@ bool Viewer::render()
             renderGrayShader.use();
 
             ir.allocate(frame->width, frame->height);
-            std::copy(frame->data, frame->data + frame->width * frame->height * frame->bytes_per_pixel, ir.data);
+            std::copy_n(frame->data, frame->width * frame->height * frame->bytes_per_pixel, ir.data);
             ir.flipY();
             ir.upload();
             glDrawArrays(GL_TRIANGLES, 0, 6);

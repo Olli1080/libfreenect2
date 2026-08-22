@@ -87,7 +87,7 @@ struct CommandData<0>
 
 struct CommandBase
 {
-  virtual ~CommandBase() {}
+  virtual ~CommandBase() noexcept = default;
 
   virtual uint32_t sequence() const = 0;
   virtual uint32_t maxResponseLength() const = 0;
@@ -118,31 +118,31 @@ public:
     min_response_length = MinResponseLength;
   }
 
-  virtual ~Command()
+  ~Command() noexcept override
   {
   }
 
-  virtual uint32_t sequence() const
+  uint32_t sequence() const override
   {
     return data_.sequence;
   }
 
-  virtual uint32_t maxResponseLength() const
+  uint32_t maxResponseLength() const override
   {
     return data_.max_response_length;
   }
 
-  virtual uint32_t minResponseLength() const
+  uint32_t minResponseLength() const override
   {
     return min_response_length;
   }
 
-  virtual const uint8_t *data() const
+  const uint8_t *data() const override
   {
     return reinterpret_cast<const uint8_t *>(&data_);
   }
 
-  virtual uint32_t size() const
+  uint32_t size() const override
   {
     return Size;
   }

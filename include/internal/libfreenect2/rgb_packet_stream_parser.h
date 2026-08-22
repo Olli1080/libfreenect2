@@ -44,11 +44,11 @@ class RgbPacketStreamParser : public DataCallback
 {
 public:
   RgbPacketStreamParser();
-  virtual ~RgbPacketStreamParser();
+  ~RgbPacketStreamParser() noexcept override;
 
   void setPacketProcessor(BaseRgbPacketProcessor *processor);
 
-  virtual void onDataReceived(unsigned char* buffer, size_t length);
+  void onDataReceived(unsigned char* buffer, size_t length) override;
 private:
   size_t buffer_size_;
   RgbPacket packet_;

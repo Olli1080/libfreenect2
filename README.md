@@ -52,19 +52,19 @@ It has been reported to work for up to 5 devices on a high-end PC using multiple
 
 ### Operating system requirements
 
-* Windows 7 (buggy), Windows 8, Windows 8.1, and probably Windows 10
-* Debian, Ubuntu 14.04 or newer, probably other Linux distros. Recommend kernel 3.16+ or as new as possible.
-* Mac OS X
+* Windows 10/11
+* Debian 12+, Ubuntu 22.04+, or newer Linux distros. Kernel 5.15+ recommended.
+* macOS 12+
 
 ### Requirements for optional features
 
-* OpenGL depth processing: OpenGL 3.1 (Windows, Linux, Mac OS X). OpenGL ES is not supported at the moment.
+* OpenGL depth processing: OpenGL 3.1+ (Windows, Linux, Mac OS X). OpenGL ES is not supported at the moment.
 * OpenCL depth processing: OpenCL 1.1
-* CUDA depth processing: CUDA (6.5 and 7.5 are tested; The minimum version is not clear.)
-* VAAPI JPEG decoding: Intel (minimum Ivy Bridge or newer) and Linux only
-* VideoToolbox JPEG decoding: Mac OS X only
+* CUDA depth processing: CUDA 11+ (CUDA Toolkit 11.x or newer)
+* VAAPI JPEG decoding: Intel (minimum Ivy Bridge or newer) and Linux only (deprecated, use TurboJPEG instead)
+* VideoToolbox JPEG decoding: macOS only
 * OpenNI2 integration: OpenNI2 2.2.0.33
-* Jetson TK1: Linux4Tegra 21.3 or later. Check [Jetson TK1 issues](https://github.com/OpenKinect/libfreenect2/wiki/Troubleshooting#jetson-tk1-issues) before installation. Jetson TX1 is not yet supported as the developers don't have one, but it may be easy to add the support.
+
 
 ## Troubleshooting and reporting bugs
 
@@ -83,16 +83,15 @@ When you report USB issues, please attach relevant debug log from running the pr
 
 ### Windows / Visual Studio
 
-* Install UsbDk driver
+* Install UsbDk driver (recommended)
 
-    1. (Windows 7) You must first install Microsoft Security Advisory 3033929 otherwise your USB keyboards and mice will stop working!
-    2. Download the latest x64 installer from https://github.com/daynix/UsbDk/releases, install it.
-    3. If UsbDk somehow does not work, uninstall UsbDk and follow the libusbK instructions.
+    1. Download the latest x64 installer from https://github.com/daynix/UsbDk/releases, install it.
 
-    This doesn't interfere with the Microsoft SDK. Do not install both UsbDK and libusbK drivers
-* (Alternatively) Install libusbK driver
+    This doesn't interfere with the Microsoft SDK. Do not install both UsbDK and libusbK drivers.
 
-    You don't need the Kinect for Windows v2 SDK to build and install libfreenect2, though it doesn't hurt to have it too. You don't need to uninstall the SDK or the driver before doing this procedure.
+* (Legacy) Install libusbK driver
+
+    Use this only if UsbDk does not work. You don't need the Kinect for Windows v2 SDK to build and install libfreenect2, though it doesn't hurt to have it too. You don't need to uninstall the SDK or the driver before doing this procedure.
 
     Install the libusbK backend driver for libusb. Please follow the steps exactly:
 
@@ -137,10 +136,9 @@ When you report USB issues, please attach relevant debug log from running the pr
     The default installation path is `install`, you may change it by editing `CMAKE_INSTALL_PREFIX`.
     ```
     mkdir build && cd build
-    cmake .. -G "Visual Studio 12 2013 Win64"
+    cmake .. -G "Visual Studio 17 2022"
     cmake --build . --config RelWithDebInfo --target install
     ```
-    Or `-G "Visual Studio 14 2015 Win64"`.
     Or `-G "Visual Studio 16 2019"`.
 * Run the test program: `.\install\bin\Protonect.exe`, or start debugging in Visual Studio.
 * Test OpenNI2 (optional)
@@ -198,52 +196,34 @@ Use your favorite package managers (brew, ports, etc.) to install most if not al
 
 ### Linux
 
-Note: Ubuntu 12.04 is too old to support. Debian jessie may also be too old, and Debian stretch is implied in the following.
-
 * Download libfreenect2 source
     ```
     git clone https://github.com/OpenKinect/libfreenect2.git
     cd libfreenect2
     ```
-* (Ubuntu 14.04 only) Download upgrade deb files
-    ```
-    cd depends; ./download_debs_trusty.sh
-    ```
 * Install build tools
     ```
     sudo apt-get install build-essential cmake pkg-config
     ```
-* Install libusb. The version must be >= 1.0.20.
-    1. (Ubuntu 14.04 only) `sudo dpkg -i debs/libusb*deb`
-    2. (Other) `sudo apt-get install libusb-1.0-0-dev`
+* Install libusb (version >= 1.0.20)
+    ```
+    sudo apt-get install libusb-1.0-0-dev
+    ```
 * Install TurboJPEG
-    1. (Ubuntu 14.04 to 16.04) `sudo apt-get install libturbojpeg libjpeg-turbo8-dev`
-    2. (Debian/Ubuntu 17.10 and newer) `sudo apt-get install libturbojpeg0-dev`
+    ```
+    sudo apt-get install libturbojpeg0-dev
+    ```
 * Install OpenGL
-    1. (Ubuntu 14.04 only) `sudo dpkg -i debs/libglfw3*deb; sudo apt-get install -f`
-    2. (Odroid XU4) OpenGL 3.1 is not supported on this platform. Use `cmake -DENABLE_OPENGL=OFF` later.
-    3. (Other) `sudo apt-get install libglfw3-dev`
+    ```
+    sudo apt-get install libglfw3-dev
+    ```
 * Install OpenCL (optional)
-    - Intel GPU
-        1. (Ubuntu 14.04 only) `sudo apt-add-repository ppa:floe/beignet; sudo apt-get update; sudo apt-get install beignet-dev; sudo dpkg -i debs/ocl-icd*deb`
-        2. (Other) `sudo apt-get install beignet-dev`
-        3. For older kernels, `# echo 0 >/sys/module/i915/parameters/enable_cmd_parser` is needed. See more known issues at https://www.freedesktop.org/wiki/Software/Beignet/.
-    - AMD GPU: Install the latest version of the AMD Catalyst drivers from https://support.amd.com and `apt-get install opencl-headers`.
-    - Mali GPU (e.g. Odroid XU4): (with root) `mkdir -p /etc/OpenCL/vendors; echo /usr/lib/arm-linux-gnueabihf/mali-egl/libmali.so >/etc/OpenCL/vendors/mali.icd; apt-get install opencl-headers`.
-    - Verify: You can install `clinfo` to verify if you have correctly set up the OpenCL stack.
-* Install CUDA (optional, Nvidia only):
-    - (Ubuntu 14.04 only) Download `cuda-repo-ubuntu1404...*.deb` ("deb (network)") from Nvidia website, follow their installation instructions, including `apt-get install cuda` which installs Nvidia graphics driver.
-    - (Jetson TK1) It is preloaded.
-    - (Nvidia/Intel dual GPUs) After `apt-get install cuda`, use `sudo prime-select intel` to use Intel GPU for desktop.
-    - (Other) Follow Nvidia website's instructions. You must install the samples package.
-* Install VAAPI (optional, Intel only)
-    1. (Ubuntu 14.04 only) `sudo dpkg -i debs/{libva,i965}*deb; sudo apt-get install -f`
-    2. (Other) `sudo apt-get install libva-dev libjpeg-dev`
-    3. Linux kernels 4.1 to 4.3 have performance regression. Use 4.0 and earlier or 4.4 and later (Though Ubuntu kernel 4.2.0-28.33~14.04.1 has backported the fix).
-* Install OpenNI2 (optional)
-    1. (Ubuntu 14.04 only) `sudo apt-add-repository ppa:deb-rob/ros-trusty && sudo apt-get update` (You don't need this if you have ROS repos), then `sudo apt-get install libopenni2-dev`
-    2. (Other) `sudo apt-get install libopenni2-dev`
-* Build (if you have run `cd depends` previously, `cd ..` back to the libfreenect2 root directory first.)
+    - Intel/AMD GPU: install your GPU vendor's OpenCL drivers and `opencl-headers`.
+    - Verify: install `clinfo` to verify your OpenCL stack.
+* Install CUDA (optional, Nvidia only): Follow https://developer.nvidia.com/cuda-downloads.
+* Install VAAPI (optional, deprecated): `sudo apt-get install libva-dev libjpeg-dev`
+* Install OpenNI2 (optional): `sudo apt-get install libopenni2-dev`
+* Build
     ```
     mkdir build && cd build
     cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/freenect2

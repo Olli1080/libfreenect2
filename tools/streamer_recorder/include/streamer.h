@@ -33,6 +33,9 @@
 #include <opencv2/opencv.hpp>
 #include "config.h"
 
+using std::vector;
+using std::string;
+
 class Streamer
 {
 public:

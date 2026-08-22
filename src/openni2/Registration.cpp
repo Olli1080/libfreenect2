@@ -32,7 +32,7 @@ using namespace Freenect2Driver;
 
 Registration::Registration(libfreenect2::Freenect2Device* dev) :
   dev(dev),
-  reg(NULL),
+  reg(nullptr),
   enabled(false)
 {
 }
@@ -77,7 +77,7 @@ void Registration::colorFrameRGB888(libfreenect2::Frame* colorFrame, libfreenect
 
 void Registration::setEnable(bool enable) { enabled = enable; }
 
-bool Registration::isEnabled() { return enabled; }
+bool Registration::isEnabled() const { return enabled; }
 
 void Registration::depthToColor(int dx, int dy, float dz, float& cx, float& cy)
 {

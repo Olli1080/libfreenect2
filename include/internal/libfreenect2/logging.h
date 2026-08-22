@@ -24,44 +24,59 @@
  * either License.
  */
 
+/** @file logging.h Internal spdlog-native logging macros. */
+
 #ifndef LOGGING_H_
 #define LOGGING_H_
 
+#include <iterator>
+#include <memory>
 #include <string>
-#include <sstream>
+#include <utility>
+
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #include <libfreenect2/config.h>
 #include <libfreenect2/logger.h>
+#include <internal/libfreenect2/perf_logging.h>
 
 namespace libfreenect2
 {
 
-class WithPerfLoggingImpl;
-
-class WithPerfLogging
+inline std::string getShortName(const char *func)
 {
-public:
-  WithPerfLogging();
-  virtual ~WithPerfLogging();
-  void startTiming();
-  std::ostream &stopTiming(std::ostream &stream);
-private:
-  WithPerfLoggingImpl *impl_;
-};
+  std::string src(func);
+  size_t end = src.rfind('(');
+  if (end == std::string::npos)
+    end = src.size();
+  size_t begin = 1 + src.rfind(' ', end);
+  size_t first_ns = src.find("::", begin);
+  if (first_ns != std::string::npos)
+    begin = first_ns + 2;
+  size_t last_ns = src.rfind("::", end);
+  if (last_ns != std::string::npos)
+    end = last_ns;
+  return src.substr(begin, end - begin);
+}
 
-class LogMessage
+namespace detail
 {
-private:
-  Logger *logger_;
-  Logger::Level level_;
-  std::ostringstream stream_;
-public:
-  LogMessage(Logger *logger, Logger::Level level);
-  LogMessage(Logger *logger, Logger::Level level, const char *source);
-  ~LogMessage();
-
-  std::ostream &stream();
-};
+// Level-gated single fmt pass into one buffer. The finished message reaches
+// spdlog as a raw string view, so user arguments are never re-parsed.
+template <typename... Args>
+void log(spdlog::level::level_enum level, const char *source, fmt::format_string<Args...> format, Args &&...args)
+{
+  auto logger = getGlobalLogger();
+  if (logger != nullptr && logger->should_log(level))
+  {
+    spdlog::memory_buf_t buf;
+    fmt::format_to(std::back_inserter(buf), "[{}] ", getShortName(source));
+    fmt::format_to(std::back_inserter(buf), format, std::forward<Args>(args)...);
+    logger->log(level, spdlog::string_view_t(buf.data(), buf.size()));
+  }
+}
+} // namespace detail
 
 } /* namespace libfreenect2 */
 
@@ -73,10 +88,9 @@ public:
 #define LOG_SOURCE ""
 #endif
 
-#define LOG(LEVEL) (::libfreenect2::LogMessage(::libfreenect2::getGlobalLogger(), ::libfreenect2::Logger::LEVEL, LOG_SOURCE).stream())
-#define LOG_DEBUG LOG(Debug)
-#define LOG_INFO LOG(Info)
-#define LOG_WARNING LOG(Warning)
-#define LOG_ERROR LOG(Error)
+#define LOG_DEBUG(...)   ::libfreenect2::detail::log(spdlog::level::debug, LOG_SOURCE, __VA_ARGS__)
+#define LOG_INFO(...)    ::libfreenect2::detail::log(spdlog::level::info, LOG_SOURCE, __VA_ARGS__)
+#define LOG_WARNING(...) ::libfreenect2::detail::log(spdlog::level::warn, LOG_SOURCE, __VA_ARGS__)
+#define LOG_ERROR(...)   ::libfreenect2::detail::log(spdlog::level::err, LOG_SOURCE, __VA_ARGS__)
 
 #endif /* LOGGING_H_ */

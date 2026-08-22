@@ -44,28 +44,28 @@ DepthPacketStreamParser::DepthPacketStreamParser() :
 
   processor_->allocateBuffer(packet_, buffer_size_);
 
-  work_buffer_.data = new unsigned char[single_image];
+  work_buffer_storage_ = std::make_unique<unsigned char[]>(single_image);
+  work_buffer_.data = work_buffer_storage_.get();
   work_buffer_.capacity = single_image;
   work_buffer_.length = 0;
 }
 
 DepthPacketStreamParser::~DepthPacketStreamParser()
 {
-  delete[] work_buffer_.data;
 }
 
 void DepthPacketStreamParser::setPacketProcessor(libfreenect2::BaseDepthPacketProcessor *processor)
 {
   processor_->releaseBuffer(packet_);
-  processor_ = (processor != 0) ? processor : noopProcessor<DepthPacket>();
+  processor_ = (processor != nullptr) ? processor : noopProcessor<DepthPacket>();
   processor_->allocateBuffer(packet_, buffer_size_);
 }
 
 void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_length)
 {
-  if (packet_.memory == NULL || packet_.memory->data == NULL)
+  if (packet_.memory == nullptr || packet_.memory->data == nullptr)
   {
-    LOG_ERROR << "Packet buffer is NULL";
+        LOG_ERROR("Packet buffer is NULL");
     return;
   }
   Buffer &wb = work_buffer_;
@@ -77,7 +77,7 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
   }
   else
   {
-    DepthSubPacketFooter *footer = 0;
+    DepthSubPacketFooter *footer = nullptr;
     bool footer_found = false;
 
     if(wb.length + in_length == wb.capacity + sizeof(DepthSubPacketFooter))
@@ -89,7 +89,7 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
 
     if(wb.length + in_length > wb.capacity)
     {
-      LOG_DEBUG << "subpacket too large";
+            LOG_DEBUG("subpacket too large");
       wb.length = 0;
       return;
     }
@@ -101,7 +101,7 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
     {
       if(footer->length != wb.length)
       {
-        LOG_DEBUG << "image data too short!";
+                LOG_DEBUG("image data too short!");
       }
       else
       {
@@ -127,18 +127,18 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
               const int interval = 30;
               if ((current_sequence_ % interval == 0 && diff != 0) || diff >= interval)
               {
-                LOG_INFO << diff << " packets were lost";
+                                LOG_INFO("{} packets were lost", diff);
                 processed_packets_ = current_sequence_;
               }
             }
             else
             {
-              LOG_DEBUG << "skipping depth packet";
+                            LOG_DEBUG("skipping depth packet");
             }
           }
           else
           {
-            LOG_DEBUG << "not all subsequences received " << current_subsequence_;
+                        LOG_DEBUG("not all subsequences received {}", current_subsequence_);
           }
 
           current_sequence_ = footer->sequence;
@@ -152,7 +152,7 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
 
         if(footer->subsequence * footer->length > fb.capacity)
         {
-          LOG_DEBUG << "front buffer too short! subsequence number is " << footer->subsequence;
+                    LOG_DEBUG("front buffer too short! subsequence number is {}", footer->subsequence);
         }
         else
         {

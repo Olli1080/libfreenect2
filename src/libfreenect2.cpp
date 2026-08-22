@@ -27,6 +27,7 @@
 /** @file libfreenect2.cpp Freenect2 devices and processing implementation. */
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <algorithm>
 #include <libusb.h>
@@ -35,8 +36,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-
-#define WRITE_LIBUSB_ERROR(__RESULT) libusb_error_name(__RESULT) << " " << libusb_strerror((libusb_error)__RESULT)
+#include <memory>
 
 #include <libfreenect2/libfreenect2.hpp>
 
@@ -56,6 +56,11 @@ namespace libfreenect2
 using namespace libfreenect2;
 using namespace libfreenect2::usb;
 using namespace libfreenect2::protocol;
+
+static std::string writeLibusbError(int result)
+{
+  return std::string(libusb_error_name(result)) + " " + libusb_strerror((libusb_error)result);
+}
 
 /*
 For detailed analysis see https://github.com/OpenKinect/libfreenect2/issues/144
@@ -128,7 +133,7 @@ struct IrCameraTables: Freenect2Device::IrCameraParams
     }
 
     if (divergence > 0)
-      LOG_ERROR << divergence << " pixels in x/ztable have incorrect undistortion.";
+            LOG_ERROR("{} pixels in x/ztable have incorrect undistortion.", divergence);
 
     short y = 0;
     for (int x = 0; x < 1024; x++)
@@ -205,6 +210,35 @@ struct IrCameraTables: Freenect2Device::IrCameraParams
   }
 };
 
+struct LibusbContextDeleter
+{
+  bool managed;
+
+  void operator()(libusb_context *ctx) const
+  {
+    if (managed && ctx != nullptr)
+      libusb_exit(ctx);
+  }
+};
+
+struct LibusbHandleDeleter
+{
+  void operator()(libusb_device_handle *handle) const
+  {
+    if (handle != nullptr)
+      libusb_close(handle);
+  }
+};
+
+struct LibusbDeviceDeleter
+{
+  void operator()(libusb_device *device) const
+  {
+    if (device != nullptr)
+      libusb_unref_device(device);
+  }
+};
+
 /** Freenect2 device implementation. */
 class Freenect2DeviceImpl : public Freenect2Device
 {
@@ -221,8 +255,8 @@ private:
   bool has_usb_interfaces_;
 
   Freenect2Impl *context_;
-  libusb_device *usb_device_;
-  libusb_device_handle *usb_device_handle_;
+  std::unique_ptr<libusb_device, LibusbDeviceDeleter> usb_device_;
+  std::unique_ptr<libusb_device_handle, LibusbHandleDeleter> usb_device_handle_;
 
   BulkTransferPool rgb_transfer_pool_;
   IsoTransferPool ir_transfer_pool_;
@@ -231,78 +265,78 @@ private:
   CommandTransaction command_tx_;
   int command_seq_;
 
-  const PacketPipeline *pipeline_;
+  std::unique_ptr<const PacketPipeline> pipeline_;
   std::string serial_, firmware_;
   Freenect2Device::IrCameraParams ir_camera_params_;
   Freenect2Device::ColorCameraParams rgb_camera_params_;
 public:
-  Freenect2DeviceImpl(Freenect2Impl *context, const PacketPipeline *pipeline, libusb_device *usb_device, libusb_device_handle *usb_device_handle, const std::string &serial);
-  virtual ~Freenect2DeviceImpl();
+  Freenect2DeviceImpl(Freenect2Impl *context, std::unique_ptr<const PacketPipeline> pipeline, libusb_device *usb_device, libusb_device_handle *usb_device_handle, const std::string &serial);
+  ~Freenect2DeviceImpl() override;
 
   bool isSameUsbDevice(libusb_device* other);
 
-  virtual std::string getSerialNumber();
-  virtual std::string getFirmwareVersion();
+  std::string getSerialNumber() override;
+  std::string getFirmwareVersion() override;
 
-  virtual Freenect2Device::ColorCameraParams getColorCameraParams();
-  virtual Freenect2Device::IrCameraParams getIrCameraParams();
-  virtual void setColorCameraParams(const Freenect2Device::ColorCameraParams &params);
-  virtual void setIrCameraParams(const Freenect2Device::IrCameraParams &params);
-  virtual void setConfiguration(const Freenect2Device::Config &config);
+  Freenect2Device::ColorCameraParams getColorCameraParams() override;
+  Freenect2Device::IrCameraParams getIrCameraParams() override;
+  void setColorCameraParams(const Freenect2Device::ColorCameraParams &params) override;
+  void setIrCameraParams(const Freenect2Device::IrCameraParams &params) override;
+  void setConfiguration(const Freenect2Device::Config &config) override;
 
   int nextCommandSeq();
 
   bool open();
 
-  virtual void setColorFrameListener(libfreenect2::FrameListener* rgb_frame_listener);
-  virtual void setIrAndDepthFrameListener(libfreenect2::FrameListener* ir_frame_listener);
-  virtual void setColorAutoExposure(float exposure_compensation = 0);
-  virtual void setColorSemiAutoExposure(float pseudo_exposure_time_ms);
-  virtual void setColorManualExposure(float integration_time_ms, float analog_gain);
-  virtual void setColorSetting(ColorSettingCommandType cmd, uint32_t value);
-  virtual void setColorSetting(ColorSettingCommandType cmd, float value);
-  virtual uint32_t getColorSetting(ColorSettingCommandType cmd);
-  virtual float getColorSettingFloat(ColorSettingCommandType cmd);
-  virtual void setLedStatus(LedSettings led);
-  virtual bool start();
-  virtual bool startStreams(bool rgb, bool depth);
-  virtual bool stop();
-  virtual bool close();
+  void setColorFrameListener(libfreenect2::FrameListener* rgb_frame_listener) override;
+  void setIrAndDepthFrameListener(libfreenect2::FrameListener* ir_frame_listener) override;
+  void setColorAutoExposure(float exposure_compensation = 0) override;
+  void setColorSemiAutoExposure(float pseudo_exposure_time_ms) override;
+  void setColorManualExposure(float integration_time_ms, float analog_gain) override;
+  void setColorSetting(ColorSettingCommandType cmd, uint32_t value) override;
+  void setColorSetting(ColorSettingCommandType cmd, float value) override;
+  uint32_t getColorSetting(ColorSettingCommandType cmd) override;
+  float getColorSettingFloat(ColorSettingCommandType cmd) override;
+  void setLedStatus(LedSettings led) override;
+  bool start() override;
+  bool startStreams(bool rgb, bool depth) override;
+  bool stop() override;
+  bool close() override;
 };
 
 class Freenect2ReplayDevice : public Freenect2Device
 {
 public:
-  Freenect2ReplayDevice(Freenect2ReplayImpl *context_, const std::vector<std::string>& frame_filenames, const PacketPipeline* pipeline);
-  virtual ~Freenect2ReplayDevice();
+  Freenect2ReplayDevice(Freenect2ReplayImpl *context_, const std::vector<std::string>& frame_filenames, std::unique_ptr<const PacketPipeline> pipeline);
+  ~Freenect2ReplayDevice() override;
 
-  virtual std::string getSerialNumber();
-  virtual std::string getFirmwareVersion();
+  std::string getSerialNumber() override;
+  std::string getFirmwareVersion() override;
 
-  virtual ColorCameraParams getColorCameraParams();
-  virtual IrCameraParams getIrCameraParams();
-  virtual void setColorCameraParams(const ColorCameraParams &params);
-  virtual void setIrCameraParams(const IrCameraParams &params);
-  virtual void setConfiguration(const Config &config);
+  ColorCameraParams getColorCameraParams() override;
+  IrCameraParams getIrCameraParams() override;
+  void setColorCameraParams(const ColorCameraParams &params) override;
+  void setIrCameraParams(const IrCameraParams &params) override;
+  void setConfiguration(const Config &config) override;
 
-  virtual void setColorFrameListener(FrameListener* listener);
-  virtual void setIrAndDepthFrameListener(FrameListener* listener);
+  void setColorFrameListener(FrameListener* listener) override;
+  void setIrAndDepthFrameListener(FrameListener* listener) override;
 
-  virtual void setColorAutoExposure(float exposure_compensation) {}
-  virtual void setColorSemiAutoExposure(float pseudo_exposure_time_ms) {}
-  virtual void setColorManualExposure(float integration_time_ms, float analog_gain) {}
-  virtual void setColorSetting(ColorSettingCommandType cmd, uint32_t value) {}
-  virtual void setColorSetting(ColorSettingCommandType cmd, float value) {}
-  virtual uint32_t getColorSetting(ColorSettingCommandType cmd) { return 0u; }
-  virtual float getColorSettingFloat(ColorSettingCommandType cmd) { return 0.0f; }
-  virtual void setLedStatus(LedSettings led) {}
+  void setColorAutoExposure(float exposure_compensation) override {}
+  void setColorSemiAutoExposure(float pseudo_exposure_time_ms) override {}
+  void setColorManualExposure(float integration_time_ms, float analog_gain) override {}
+  void setColorSetting(ColorSettingCommandType cmd, uint32_t value) override {}
+  void setColorSetting(ColorSettingCommandType cmd, float value) override {}
+  uint32_t getColorSetting(ColorSettingCommandType cmd) override { return 0u; }
+  float getColorSettingFloat(ColorSettingCommandType cmd) override { return 0.0f; }
+  void setLedStatus(LedSettings led) override {}
 
   bool open();
 
-  virtual bool start();
-  virtual bool startStreams(bool rgb, bool depth);
-  virtual bool stop();
-  virtual bool close();
+  bool start() override;
+  bool startStreams(bool rgb, bool depth) override;
+  bool stop() override;
+  bool close() override;
 
   // X, Z, LUT tables are generated in setIrCameraParams().
   void loadP0Tables(unsigned char* buffer, size_t buffer_length);
@@ -316,31 +350,23 @@ private:
   static void static_execute(void* arg);
 
   Freenect2ReplayImpl *context_;
-  const PacketPipeline* pipeline_;
+  std::unique_ptr<const PacketPipeline> pipeline_;
   size_t buffer_size_;
   DepthPacket packet_;
 
   std::vector<std::string> frame_filenames_;
-  libfreenect2::thread* t_;
+  std::unique_ptr<std::thread> t_;
   bool running_;
 
   Freenect2Device::IrCameraParams ir_camera_params_;
   Freenect2Device::ColorCameraParams rgb_camera_params_;
 };
 
-struct PrintBusAndDevice
+static std::string printBusAndDevice(libusb_device *dev, int status = 0)
 {
-  libusb_device *dev_;
-  int status_;
-
-  PrintBusAndDevice(libusb_device *dev, int status = 0) : dev_(dev), status_(status) {}
-};
-
-std::ostream &operator<<(std::ostream &out, const PrintBusAndDevice& dev)
-{
-  out << "@" << int(libusb_get_bus_number(dev.dev_)) << ":" << int(libusb_get_device_address(dev.dev_));
-  if (dev.status_)
-    out << " " << WRITE_LIBUSB_ERROR(dev.status_);
+  std::string out = "@" + std::to_string(int(libusb_get_bus_number(dev))) + ":" + std::to_string(int(libusb_get_device_address(dev)));
+  if (status)
+    out += " " + writeLibusbError(status);
   return out;
 }
 
@@ -349,12 +375,12 @@ class Freenect2Impl
 {
 private:
   bool managed_usb_context_;
-  libusb_context *usb_context_;
+  std::unique_ptr<libusb_context, LibusbContextDeleter> usb_context_;
   EventLoop usb_event_loop_;
 public:
   struct UsbDeviceWithSerial
   {
-    libusb_device *dev;
+    std::unique_ptr<libusb_device, LibusbDeviceDeleter> dev;
     std::string serial;
   };
   typedef std::vector<UsbDeviceWithSerial> UsbDeviceVector;
@@ -367,38 +393,41 @@ public:
   bool initialized;
 
   Freenect2Impl(void *usb_context) :
-    managed_usb_context_(usb_context == 0),
-    usb_context_(reinterpret_cast<libusb_context *>(usb_context)),
+    managed_usb_context_(usb_context == nullptr),
+    usb_context_(reinterpret_cast<libusb_context *>(usb_context), LibusbContextDeleter{usb_context == nullptr}),
     has_device_enumeration_(false),
     initialized(false)
   {
 #ifdef __linux__
     if (libusb_get_version()->nano < 10952)
     {
-      LOG_ERROR << "Your libusb does not support large iso buffer!";
+            LOG_ERROR("Your libusb does not support large iso buffer!");
       return;
     }
 #endif
 
     if(managed_usb_context_)
     {
-      int r = libusb_init(&usb_context_);
+      libusb_context *ctx = nullptr;
+      int r = libusb_init(&ctx);
       if(r != 0)
       {
-        LOG_ERROR << "failed to create usb context: " << WRITE_LIBUSB_ERROR(r);
+                LOG_ERROR("failed to create usb context: {}", writeLibusbError(r));
         return;
       }
 
+      usb_context_ = std::unique_ptr<libusb_context, LibusbContextDeleter>(ctx, LibusbContextDeleter{true});
+
 #if defined(_WIN32) || defined (__WIN32__) || defined(__WINDOWS__)
-      (void)libusb_set_option(usb_context_, LIBUSB_OPTION_USE_USBDK);
+      (void)libusb_set_option(usb_context_.get(), LIBUSB_OPTION_USE_USBDK);
 #endif
     }
 
-    usb_event_loop_.start(usb_context_);
+    usb_event_loop_.start(usb_context_.get());
     initialized = true;
   }
 
-  ~Freenect2Impl()
+  ~Freenect2Impl() noexcept
   {
     if (!initialized)
       return;
@@ -407,12 +436,6 @@ public:
     clearDeviceEnumeration();
 
     usb_event_loop_.stop();
-
-    if(managed_usb_context_ && usb_context_ != 0)
-    {
-      libusb_exit(usb_context_);
-      usb_context_ = 0;
-    }
   }
 
   void addDevice(Freenect2DeviceImpl *device)
@@ -428,7 +451,7 @@ public:
     if (!initialized)
       return;
 
-    DeviceVector::iterator it = std::find(devices_.begin(), devices_.end(), device);
+    auto it = std::find(devices_.begin(), devices_.end(), device);
 
     if(it != devices_.end())
     {
@@ -436,7 +459,7 @@ public:
     }
     else
     {
-      LOG_WARNING << "tried to remove device, which is not in the internal device list!";
+            LOG_WARNING("tried to remove device, which is not in the internal device list!");
     }
   }
 
@@ -445,11 +468,11 @@ public:
     if (!initialized)
       return false;
 
-    for(DeviceVector::iterator it = devices_.begin(); it != devices_.end(); ++it)
+    for(auto dev : devices_)
     {
-      if((*it)->isSameUsbDevice(usb_device))
+      if(dev->isSameUsbDevice(usb_device))
       {
-        *device = *it;
+        *device = dev;
         return true;
       }
     }
@@ -464,14 +487,14 @@ public:
 
     DeviceVector devices(devices_.begin(), devices_.end());
 
-    for(DeviceVector::iterator it = devices.begin(); it != devices.end(); ++it)
+    for(auto dev : devices)
     {
-      delete (*it);
+      delete dev;
     }
 
     if(!devices_.empty())
     {
-      LOG_WARNING << "after deleting all devices the internal device list should be empty!";
+            LOG_WARNING("after deleting all devices the internal device list should be empty!");
     }
   }
 
@@ -480,12 +503,7 @@ public:
     if (!initialized)
       return;
 
-    // free enumerated device pointers, this should not affect opened devices
-    for(UsbDeviceVector::iterator it = enumerated_devices_.begin(); it != enumerated_devices_.end(); ++it)
-    {
-      libusb_unref_device(it->dev);
-    }
-
+    // enumerated device refs are released by the unique_ptr members, this should not affect opened devices
     enumerated_devices_.clear();
     has_device_enumeration_ = false;
   }
@@ -495,11 +513,11 @@ public:
     if (!initialized)
       return;
 
-    LOG_INFO << "enumerating devices...";
+        LOG_INFO("enumerating devices...");
     libusb_device **device_list;
-    int num_devices = libusb_get_device_list(usb_context_, &device_list);
+    int num_devices = libusb_get_device_list(usb_context_.get(), &device_list);
 
-    LOG_INFO << num_devices << " usb devices connected";
+        LOG_INFO("{} usb devices connected", num_devices);
 
     if(num_devices > 0)
     {
@@ -518,47 +536,42 @@ public:
           if(tryGetDevice(dev, &freenect2_dev))
           {
             UsbDeviceWithSerial dev_with_serial;
-            dev_with_serial.dev = dev;
+            dev_with_serial.dev.reset(dev);
             dev_with_serial.serial = freenect2_dev->getSerialNumber();
 
-            enumerated_devices_.push_back(dev_with_serial);
+            enumerated_devices_.push_back(std::move(dev_with_serial));
             continue;
           }
-          else
+
+          libusb_device_handle *dev_handle;
+          r = libusb_open(dev, &dev_handle);
+
+          if(r == LIBUSB_SUCCESS)
           {
-            libusb_device_handle *dev_handle;
-            r = libusb_open(dev, &dev_handle);
+            unsigned char buffer[1024];
+            r = libusb_get_string_descriptor_ascii(dev_handle, dev_desc.iSerialNumber, buffer, sizeof(buffer));
+            // keep the ref until determined not kinect
+            std::unique_ptr<libusb_device, LibusbDeviceDeleter> dev_ref(dev);
+            libusb_close(dev_handle);
 
-            if(r == LIBUSB_SUCCESS)
+            if(r > LIBUSB_SUCCESS)
             {
-              unsigned char buffer[1024];
-              r = libusb_get_string_descriptor_ascii(dev_handle, dev_desc.iSerialNumber, buffer, sizeof(buffer));
-              // keep the ref until determined not kinect
-              libusb_ref_device(dev);
-              libusb_close(dev_handle);
+              UsbDeviceWithSerial dev_with_serial;
+              dev_with_serial.dev = std::move(dev_ref);
+              dev_with_serial.serial = std::string(reinterpret_cast<char *>(buffer), size_t(r));
 
-              if(r > LIBUSB_SUCCESS)
-              {
-                UsbDeviceWithSerial dev_with_serial;
-                dev_with_serial.dev = dev;
-                dev_with_serial.serial = std::string(reinterpret_cast<char *>(buffer), size_t(r));
-
-                LOG_INFO << "found valid Kinect v2 " << PrintBusAndDevice(dev) << " with serial " << dev_with_serial.serial;
-                // valid Kinect v2
-                enumerated_devices_.push_back(dev_with_serial);
-                continue;
-              }
-              else
-              {
-                libusb_unref_device(dev);
-                LOG_ERROR << "failed to get serial number of Kinect v2: " << PrintBusAndDevice(dev, r);
-              }
+                            LOG_INFO("found valid Kinect v2 {} with serial {}", printBusAndDevice(dev), dev_with_serial.serial);
+              // valid Kinect v2
+              enumerated_devices_.push_back(std::move(dev_with_serial));
             }
             else
             {
-              LOG_ERROR << "failed to open Kinect v2: " << PrintBusAndDevice(dev, r);
+                            LOG_ERROR("failed to get serial number of Kinect v2: {}", printBusAndDevice(dev, r));
             }
+            continue;
           }
+
+                    LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev, r));
         }
         libusb_unref_device(dev);
       }
@@ -567,7 +580,7 @@ public:
     libusb_free_device_list(device_list, 0);
     has_device_enumeration_ = true;
 
-    LOG_INFO << "found " << enumerated_devices_.size() << " devices";
+        LOG_INFO("found {} devices", enumerated_devices_.size());
   }
 
   int getNumDevices()
@@ -582,7 +595,7 @@ public:
     return enumerated_devices_.size();
   }
 
-  Freenect2Device *openDevice(int idx, const PacketPipeline *factory, bool attempting_reset);
+  Freenect2Device *openDevice(int idx, std::unique_ptr<const PacketPipeline> factory, bool attempting_reset);
 };
 
 class Freenect2ReplayImpl
@@ -592,7 +605,7 @@ private:
   DeviceVector devices_;
 
 public:
-  ~Freenect2ReplayImpl()
+  ~Freenect2ReplayImpl() noexcept
   {
     clearDevices();
   }
@@ -604,7 +617,7 @@ public:
 
   void removeDevice(Freenect2ReplayDevice *device)
   {
-    DeviceVector::iterator it = std::find(devices_.begin(), devices_.end(), device);
+    auto it = std::find(devices_.begin(), devices_.end(), device);
 
     if(it != devices_.end())
     {
@@ -612,7 +625,7 @@ public:
     }
     else
     {
-      LOG_WARNING << "tried to remove a REPLAY device, which is not in the internal device list!";
+            LOG_WARNING("tried to remove a REPLAY device, which is not in the internal device list!");
     }
   }
 
@@ -620,26 +633,22 @@ public:
   {
     DeviceVector devices(devices_.begin(), devices_.end());
 
-    for(DeviceVector::iterator it = devices.begin(); it != devices.end(); ++it)
+    for(auto dev : devices)
     {
-      delete (*it);
+      delete dev;
     }
 
     // Should never happen
     if(!devices_.empty())
     {
-      LOG_WARNING << "after deleting all REPLAY devices the internal device list should be empty!";
+            LOG_WARNING("after deleting all REPLAY devices the internal device list should be empty!");
     }
   }
 
-  Freenect2Device *openDevice(const std::vector<std::string>& frame_filenames, const PacketPipeline *pipeline);
+  Freenect2Device *openDevice(const std::vector<std::string>& frame_filenames, std::unique_ptr<const PacketPipeline> pipeline);
 };
 
-Freenect2Device::~Freenect2Device()
-{
-}
-
-Freenect2DeviceImpl::Freenect2DeviceImpl(Freenect2Impl *context, const PacketPipeline *pipeline, libusb_device *usb_device, libusb_device_handle *usb_device_handle, const std::string &serial) :
+Freenect2DeviceImpl::Freenect2DeviceImpl(Freenect2Impl *context, std::unique_ptr<const PacketPipeline> pipeline, libusb_device *usb_device, libusb_device_handle *usb_device_handle, const std::string &serial) :
   state_(Created),
   has_usb_interfaces_(false),
   context_(context),
@@ -647,10 +656,10 @@ Freenect2DeviceImpl::Freenect2DeviceImpl(Freenect2Impl *context, const PacketPip
   usb_device_handle_(usb_device_handle),
   rgb_transfer_pool_(usb_device_handle, 0x83),
   ir_transfer_pool_(usb_device_handle, 0x84),
-  usb_control_(usb_device_handle_),
-  command_tx_(usb_device_handle_, 0x81, 0x02),
+  usb_control_(usb_device_handle_.get()),
+  command_tx_(usb_device_handle_.get(), 0x81, 0x02),
   command_seq_(0),
-  pipeline_(pipeline),
+  pipeline_(std::move(pipeline)),
   serial_(serial),
   firmware_("<unknown>")
 {
@@ -662,8 +671,6 @@ Freenect2DeviceImpl::~Freenect2DeviceImpl()
 {
   close();
   context_->removeDevice(this);
-
-  delete pipeline_;
 }
 
 int Freenect2DeviceImpl::nextCommandSeq()
@@ -675,10 +682,10 @@ bool Freenect2DeviceImpl::isSameUsbDevice(libusb_device* other)
 {
   bool result = false;
 
-  if(state_ != Closed && usb_device_ != 0)
+  if(state_ != Closed && usb_device_ != nullptr)
   {
-    unsigned char bus = libusb_get_bus_number(usb_device_);
-    unsigned char address = libusb_get_device_address(usb_device_);
+    unsigned char bus = libusb_get_bus_number(usb_device_.get());
+    unsigned char address = libusb_get_device_address(usb_device_.get());
 
     unsigned char other_bus = libusb_get_bus_number(other);
     unsigned char other_address = libusb_get_device_address(other);
@@ -719,38 +726,32 @@ void Freenect2DeviceImpl::setIrCameraParams(const Freenect2Device::IrCameraParam
 {
   ir_camera_params_ = params;
   DepthPacketProcessor *proc = pipeline_->getDepthPacketProcessor();
-  if (proc != 0)
+  if (proc != nullptr)
   {
     IrCameraTables tables(params);
-    proc->loadXZTables(&tables.xtable[0], &tables.ztable[0]);
-    proc->loadLookupTable(&tables.lut[0]);
+    proc->loadXZTables(tables.xtable.data(), tables.ztable.data());
+    proc->loadLookupTable(tables.lut.data());
   }
 }
-
-Freenect2Device::Config::Config() :
-  MinDepth(0.5f),
-  MaxDepth(4.5f), //set to > 8000 for best performance when using the kde pipeline
-  EnableBilateralFilter(true),
-  EnableEdgeAwareFilter(true) {}
 
 void Freenect2DeviceImpl::setConfiguration(const Freenect2Device::Config &config)
 {
   DepthPacketProcessor *proc = pipeline_->getDepthPacketProcessor();
-  if (proc != 0)
+  if (proc != nullptr)
     proc->setConfiguration(config);
 }
 
 void Freenect2DeviceImpl::setColorFrameListener(libfreenect2::FrameListener* rgb_frame_listener)
 {
   // TODO: should only be possible, if not started
-  if(pipeline_->getRgbPacketProcessor() != 0)
+  if(pipeline_->getRgbPacketProcessor() != nullptr)
     pipeline_->getRgbPacketProcessor()->setFrameListener(rgb_frame_listener);
 }
 
 void Freenect2DeviceImpl::setIrAndDepthFrameListener(libfreenect2::FrameListener* ir_frame_listener)
 {
   // TODO: should only be possible, if not started
-  if(pipeline_->getDepthPacketProcessor() != 0)
+  if(pipeline_->getDepthPacketProcessor() != nullptr)
     pipeline_->getDepthPacketProcessor()->setFrameListener(ir_frame_listener);
 }
 
@@ -797,10 +798,10 @@ uint32_t Freenect2DeviceImpl::getColorSetting(ColorSettingCommandType cmd)
   command_tx_.execute(ColorSettingCommand(cmd), result);
   if (result.size() < sizeof(ColorSettingResponse))
   {
-    LOG_WARNING << "failed to get color setting, response size " << result.size() << " too small, expected " << sizeof(ColorSettingResponse);
+        LOG_WARNING("failed to get color setting, response size {} too small, expected {}", result.size(), sizeof(ColorSettingResponse));
     return 0u;
   }
-  ColorSettingResponse const* data = reinterpret_cast<ColorSettingResponse const*>(&result[0]);
+  ColorSettingResponse const* data = reinterpret_cast<ColorSettingResponse const*>(result.data());
   return data->Data;
 }
 
@@ -820,7 +821,7 @@ void Freenect2DeviceImpl::setLedStatus(LedSettings led)
 
 bool Freenect2DeviceImpl::open()
 {
-  LOG_INFO << "opening...";
+    LOG_INFO("opening...");
 
   if(state_ != Created) return false;
 
@@ -840,7 +841,7 @@ bool Freenect2DeviceImpl::open()
 
   if(max_iso_packet_size < 0x8400)
   {
-    LOG_ERROR << "max iso packet size for endpoint 0x84 too small! (expected: " << 0x8400 << " got: " << max_iso_packet_size << ")";
+        LOG_ERROR("max iso packet size for endpoint 0x84 too small! (expected: {} got: {})", 0x8400, max_iso_packet_size);
     return false;
   }
 
@@ -870,15 +871,13 @@ bool Freenect2DeviceImpl::open()
   xfer_str = std::getenv("LIBFREENECT2_IR_TRANSFERS");
   if(xfer_str) ir_num_xfers = std::atoi(xfer_str);
 
-  LOG_INFO << "transfer pool sizes"
-           << " rgb: " << rgb_num_xfers << "*" << rgb_xfer_size
-           << " ir: " << ir_num_xfers << "*" << ir_pkts_per_xfer << "*" << max_iso_packet_size;
+    LOG_INFO("transfer pool sizes rgb: {}*{} ir: {}*{}*{}", rgb_num_xfers, rgb_xfer_size, ir_num_xfers, ir_pkts_per_xfer, max_iso_packet_size);
   rgb_transfer_pool_.allocate(rgb_num_xfers, rgb_xfer_size);
   ir_transfer_pool_.allocate(ir_num_xfers, ir_pkts_per_xfer, max_iso_packet_size);
 
   state_ = Open;
 
-  LOG_INFO << "opened";
+    LOG_INFO("opened");
 
   return true;
 }
@@ -890,7 +889,7 @@ bool Freenect2DeviceImpl::start()
 
 bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
 {
-  LOG_INFO << "starting...";
+    LOG_INFO("starting...");
   if(state_ != Open) return false;
 
   CommandTransaction::Result serial_result, firmware_result, result;
@@ -909,15 +908,15 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
 
   if(serial_ != new_serial)
   {
-    LOG_WARNING << "serial number reported by libusb " << serial_ << " differs from serial number " << new_serial << " in device protocol! ";
+        LOG_WARNING("serial number reported by libusb {} differs from serial number {} in device protocol! ", serial_, new_serial);
   }
 
   if (!command_tx_.execute(ReadDepthCameraParametersCommand(nextCommandSeq()), result)) return false;
   setIrCameraParams(DepthCameraParamsResponse(result).toIrCameraParams());
 
   if (!command_tx_.execute(ReadP0TablesCommand(nextCommandSeq()), result)) return false;
-  if(pipeline_->getDepthPacketProcessor() != 0)
-    pipeline_->getDepthPacketProcessor()->loadP0TablesFromCommandResponse(&result[0], result.size());
+  if(pipeline_->getDepthPacketProcessor() != nullptr)
+    pipeline_->getDepthPacketProcessor()->loadP0TablesFromCommandResponse(result.data(), result.size());
 
   if (!command_tx_.execute(ReadRgbCameraParametersCommand(nextCommandSeq()), result)) return false;
   setColorCameraParams(RgbCameraParamsResponse(result).toColorCameraParams());
@@ -931,12 +930,12 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
     if (!command_tx_.execute(ReadStatus0x090000Command(nextCommandSeq()), result)) return false;
     status = Status0x090000Response(result).toNumber();
     if (status != last)
-      LOG_DEBUG << "status 0x090000: " << status;
+            LOG_DEBUG("status 0x090000: {}", status);
     if ((status & 1) == 0)
       this_thread::sleep_for(chrono::milliseconds(100));
   }
   if (timeout == 0) {
-    LOG_DEBUG << "status 0x090000: timeout";
+        LOG_DEBUG("status 0x090000: timeout");
   }
 
   if (!command_tx_.execute(InitStreamsCommand(nextCommandSeq()), result)) return false;
@@ -944,7 +943,7 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
   if (usb_control_.setIrInterfaceState(UsbControl::Enabled) != UsbControl::Success) return false;
 
   if (!command_tx_.execute(ReadStatus0x090000Command(nextCommandSeq()), result)) return false;
-  LOG_DEBUG << "status 0x090000: " << Status0x090000Response(result).toNumber();
+    LOG_DEBUG("status 0x090000: {}", Status0x090000Response(result).toNumber());
 
   if (!command_tx_.execute(SetStreamEnabledCommand(nextCommandSeq()), result)) return false;
 
@@ -967,43 +966,43 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
 */
   if (enable_rgb)
   {
-    LOG_INFO << "submitting rgb transfers...";
+        LOG_INFO("submitting rgb transfers...");
     rgb_transfer_pool_.enableSubmission();
     if (!rgb_transfer_pool_.submit()) return false;
   }
 
   if (enable_depth)
   {
-    LOG_INFO << "submitting depth transfers...";
+        LOG_INFO("submitting depth transfers...");
     ir_transfer_pool_.enableSubmission();
     if (!ir_transfer_pool_.submit()) return false;
   }
 
   state_ = Streaming;
-  LOG_INFO << "started";
+    LOG_INFO("started");
   return true;
 }
 
 bool Freenect2DeviceImpl::stop()
 {
-  LOG_INFO << "stopping...";
+    LOG_INFO("stopping...");
 
   if(state_ != Streaming)
   {
-    LOG_INFO << "already stopped, doing nothing";
+        LOG_INFO("already stopped, doing nothing");
     return false;
   }
 
   if (rgb_transfer_pool_.enabled())
   {
-    LOG_INFO << "canceling rgb transfers...";
+        LOG_INFO("canceling rgb transfers...");
     rgb_transfer_pool_.disableSubmission();
     rgb_transfer_pool_.cancel();
   }
 
   if (ir_transfer_pool_.enabled())
   {
-    LOG_INFO << "canceling depth transfers...";
+        LOG_INFO("canceling depth transfers...");
     ir_transfer_pool_.disableSubmission();
     ir_transfer_pool_.cancel();
   }
@@ -1023,17 +1022,17 @@ bool Freenect2DeviceImpl::stop()
   if (usb_control_.setVideoTransferFunctionState(UsbControl::Disabled) != UsbControl::Success) return false;
 
   state_ = Open;
-  LOG_INFO << "stopped";
+    LOG_INFO("stopped");
   return true;
 }
 
 bool Freenect2DeviceImpl::close()
 {
-  LOG_INFO << "closing...";
+    LOG_INFO("closing...");
 
   if(state_ == Closed)
   {
-    LOG_INFO << "already closed, doing nothing";
+        LOG_INFO("already closed, doing nothing");
     return true;
   }
 
@@ -1056,88 +1055,86 @@ bool Freenect2DeviceImpl::close()
    * Shut down Kinect explicitly on Mac and wait a fixed time.
    */
   command_tx_.execute(ShutdownCommand(nextCommandSeq()), result);
-  libfreenect2::this_thread::sleep_for(libfreenect2::chrono::milliseconds(4*1000));
+  std::this_thread::sleep_for(std::chrono::milliseconds(4*1000));
 #endif
 
-  if(pipeline_->getRgbPacketProcessor() != 0)
-    pipeline_->getRgbPacketProcessor()->setFrameListener(0);
+  if(pipeline_->getRgbPacketProcessor() != nullptr)
+    pipeline_->getRgbPacketProcessor()->setFrameListener(nullptr);
 
-  if(pipeline_->getDepthPacketProcessor() != 0)
-    pipeline_->getDepthPacketProcessor()->setFrameListener(0);
+  if(pipeline_->getDepthPacketProcessor() != nullptr)
+    pipeline_->getDepthPacketProcessor()->setFrameListener(nullptr);
 
   if(has_usb_interfaces_)
   {
-    LOG_INFO << "releasing usb interfaces...";
+        LOG_INFO("releasing usb interfaces...");
 
     usb_control_.releaseInterfaces();
     has_usb_interfaces_ = false;
   }
 
-  LOG_INFO << "deallocating usb transfer pools...";
+    LOG_INFO("deallocating usb transfer pools...");
   rgb_transfer_pool_.deallocate();
   ir_transfer_pool_.deallocate();
 
-  LOG_INFO << "closing usb device...";
+    LOG_INFO("closing usb device...");
 
-  libusb_close(usb_device_handle_);
-  usb_device_handle_ = 0;
-  usb_device_ = 0;
+  usb_device_handle_.reset();
+  usb_device_.reset();
 
   state_ = Closed;
-  LOG_INFO << "closed";
+    LOG_INFO("closed");
   return true;
 }
 
-PacketPipeline *createPacketPipelineByName(std::string name)
+std::unique_ptr<const PacketPipeline> createPacketPipelineByName(std::string_view name)
 {
 #if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
   if (name == "gl")
-    return new OpenGLPacketPipeline();
+    return std::make_unique<OpenGLPacketPipeline>();
 #endif
 #if defined(LIBFREENECT2_WITH_CUDA_SUPPORT)
   if (name == "cuda")
-    return new CudaPacketPipeline();
+    return std::make_unique<CudaPacketPipeline>();
 #endif
 #if defined(LIBFREENECT2_WITH_OPENCL_SUPPORT)
   if (name == "cl")
-    return new OpenCLPacketPipeline();
+    return std::make_unique<OpenCLPacketPipeline>();
 #endif
   if (name == "cpu")
-    return new CpuPacketPipeline();
-  return NULL;
+    return std::make_unique<CpuPacketPipeline>();
+  return nullptr;
 }
 
-PacketPipeline *createDefaultPacketPipeline()
+std::unique_ptr<const PacketPipeline> createDefaultPacketPipeline()
 {
   const char *pipeline_env = std::getenv("LIBFREENECT2_PIPELINE");
   if (pipeline_env)
   {
-    PacketPipeline *pipeline = createPacketPipelineByName(pipeline_env);
+    auto pipeline = createPacketPipelineByName(pipeline_env);
     if (pipeline)
       return pipeline;
     else
-      LOG_WARNING << "`" << pipeline_env << "' pipeline is not available.";
+            LOG_WARNING("`{}' pipeline is not available.", pipeline_env);
   }
 
 #if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
-  return new OpenGLPacketPipeline();
+  return std::make_unique<OpenGLPacketPipeline>();
 #elif defined(LIBFREENECT2_WITH_CUDA_SUPPORT)
-  return new CudaPacketPipeline();
+  return std::make_unique<CudaPacketPipeline>();
 #elif defined(LIBFREENECT2_WITH_OPENCL_SUPPORT)
-  return new OpenCLPacketPipeline();
+  return std::make_unique<OpenCLPacketPipeline>();
 #else
-  return new CpuPacketPipeline();
+  return std::make_unique<CpuPacketPipeline>();
 #endif
 }
 
 Freenect2::Freenect2(void *usb_context) :
-    impl_(new Freenect2Impl(usb_context))
+    impl_(std::make_unique<Freenect2Impl>(usb_context))
 {
 }
 
 Freenect2::~Freenect2()
 {
-  delete impl_;
 }
 
 int Freenect2::enumerateDevices()
@@ -1149,9 +1146,9 @@ int Freenect2::enumerateDevices()
 std::string Freenect2::getDeviceSerialNumber(int idx)
 {
   if (!impl_->initialized)
-    return std::string();
+    return {};
   if (idx >= impl_->getNumDevices() || idx < 0)
-    return std::string();
+    return {};
 
   return impl_->enumerated_devices_[idx].serial;
 }
@@ -1163,35 +1160,32 @@ std::string Freenect2::getDefaultDeviceSerialNumber()
 
 Freenect2Device *Freenect2::openDevice(int idx)
 {
-  return openDevice(idx, createDefaultPacketPipeline());
+  return impl_->openDevice(idx, createDefaultPacketPipeline(), true);
 }
 
 Freenect2Device *Freenect2::openDevice(int idx, const PacketPipeline *pipeline)
 {
-  return impl_->openDevice(idx, pipeline, true);
+  return impl_->openDevice(idx, std::unique_ptr<const PacketPipeline>(pipeline), true);
 }
 
-Freenect2Device *Freenect2Impl::openDevice(int idx, const PacketPipeline *pipeline, bool attempting_reset)
+Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const PacketPipeline> pipeline, bool attempting_reset)
 {
   int num_devices = getNumDevices();
-  Freenect2DeviceImpl *device = 0;
+  Freenect2DeviceImpl *device = nullptr;
 
   if(idx >= num_devices)
   {
-    LOG_ERROR << "requested device " << idx << " is not connected!";
-    delete pipeline;
+        LOG_ERROR("requested device {} is not connected!", idx);
 
     return device;
   }
 
   Freenect2Impl::UsbDeviceWithSerial &dev = enumerated_devices_[idx];
-  libusb_device_handle *dev_handle;
+  libusb_device_handle *dev_handle = nullptr;
 
-  if(tryGetDevice(dev.dev, &device))
+  if(tryGetDevice(dev.dev.get(), &device))
   {
-    LOG_WARNING << "device " << PrintBusAndDevice(dev.dev)
-        << " is already be open!";
-    delete pipeline;
+        LOG_WARNING("device {} is already be open!", printBusAndDevice(dev.dev.get()));
 
     return device;
   }
@@ -1199,26 +1193,27 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, const PacketPipeline *pipeli
   int r;
   for (int i = 0; i < 10; i++)
   {
-    r = libusb_open(dev.dev, &dev_handle);
+    r = libusb_open(dev.dev.get(), &dev_handle);
     if(r == LIBUSB_SUCCESS)
     {
       break;
     }
-    LOG_INFO << "device unavailable right now, retrying";
+        LOG_INFO("device unavailable right now, retrying");
     this_thread::sleep_for(chrono::milliseconds(100));
   }
 
   if(r != LIBUSB_SUCCESS)
   {
-    LOG_ERROR << "failed to open Kinect v2: " << PrintBusAndDevice(dev.dev, r);
-    delete pipeline;
+        LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev.dev.get(), r));
 
     return device;
   }
 
+  std::unique_ptr<libusb_device_handle, LibusbHandleDeleter> dev_handle_ptr(dev_handle);
+
   if(attempting_reset)
   {
-    r = libusb_reset_device(dev_handle);
+    r = libusb_reset_device(dev_handle_ptr.get());
 
     if(r == LIBUSB_ERROR_NOT_FOUND)
     {
@@ -1230,41 +1225,42 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, const PacketPipeline *pipeli
       // LIBUSB_ERROR_NOT_FOUND indicates when this is the case."
 
       // be a good citizen
-      libusb_close(dev_handle);
+      dev_handle_ptr.reset();
 
       // HACK: wait for the planets to align... (When the reset fails it may
       // take a short while for the device to show up on the bus again. In the
       // absence of hotplug support, we just wait a little. If this code path
       // is followed there will already be a delay opening the device fully so
       // adding a little more is tolerable.)
-      libfreenect2::this_thread::sleep_for(libfreenect2::chrono::milliseconds(1000));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
       // reenumerate devices
-      LOG_INFO << "re-enumerating devices after reset";
+            LOG_INFO("re-enumerating devices after reset");
       clearDeviceEnumeration();
       enumerateDevices();
 
       // re-open without reset
-      return openDevice(idx, pipeline, false);
+      return openDevice(idx, std::move(pipeline), false);
     }
     else if(r != LIBUSB_SUCCESS)
     {
-      LOG_ERROR << "failed to reset Kinect v2: " << PrintBusAndDevice(dev.dev, r);
-      delete pipeline;
+            LOG_ERROR("failed to reset Kinect v2: {}", printBusAndDevice(dev.dev.get(), r));
 
       return device;
     }
   }
 
-  device = new Freenect2DeviceImpl(this, pipeline, dev.dev, dev_handle, dev.serial);
+  // the device owns its own device ref, independent of the enumeration list
+  libusb_ref_device(dev.dev.get());
+  device = new Freenect2DeviceImpl(this, std::move(pipeline), dev.dev.get(), dev_handle_ptr.release(), dev.serial);
   addDevice(device);
 
   if(!device->open())
   {
     delete device;
-    device = 0;
+    device = nullptr;
 
-    LOG_ERROR << "failed to open Kinect v2: " << PrintBusAndDevice(dev.dev);
+        LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev.dev.get()));
   }
 
   return device;
@@ -1272,24 +1268,34 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, const PacketPipeline *pipeli
 
 Freenect2Device *Freenect2::openDevice(const std::string &serial)
 {
-  return openDevice(serial, createDefaultPacketPipeline());
-}
+  std::unique_ptr<const PacketPipeline> pipeline = createDefaultPacketPipeline();
 
-Freenect2Device *Freenect2::openDevice(const std::string &serial, const PacketPipeline *pipeline)
-{
-  Freenect2Device *device = 0;
   int num_devices = impl_->getNumDevices();
-
   for(int idx = 0; idx < num_devices; ++idx)
   {
     if(impl_->enumerated_devices_[idx].serial == serial)
     {
-      return openDevice(idx, pipeline);
+      return impl_->openDevice(idx, std::move(pipeline), true);
     }
   }
 
-  delete pipeline;
-  return device;
+  return nullptr;
+}
+
+Freenect2Device *Freenect2::openDevice(const std::string &serial, const PacketPipeline *pipeline)
+{
+  std::unique_ptr<const PacketPipeline> p(pipeline);
+
+  int num_devices = impl_->getNumDevices();
+  for(int idx = 0; idx < num_devices; ++idx)
+  {
+    if(impl_->enumerated_devices_[idx].serial == serial)
+    {
+      return impl_->openDevice(idx, std::move(p), true);
+    }
+  }
+
+  return nullptr;
 }
 
 Freenect2Device *Freenect2::openDefaultDevice()
@@ -1302,8 +1308,8 @@ Freenect2Device *Freenect2::openDefaultDevice(const PacketPipeline *pipeline)
   return openDevice(0, pipeline);
 }
 
-Freenect2ReplayDevice::Freenect2ReplayDevice(Freenect2ReplayImpl *context, const std::vector<std::string>& frame_filenames, const PacketPipeline* pipeline)
-  :context_(context), pipeline_(pipeline), frame_filenames_(frame_filenames), running_(false)
+Freenect2ReplayDevice::Freenect2ReplayDevice(Freenect2ReplayImpl *context, const std::vector<std::string>& frame_filenames, std::unique_ptr<const PacketPipeline> pipeline)
+  :context_(context), pipeline_(std::move(pipeline)), frame_filenames_(frame_filenames), running_(false)
 {
   size_t single_image = 512*424*11/8;
   buffer_size_ = 10 * single_image;
@@ -1314,7 +1320,6 @@ Freenect2ReplayDevice::~Freenect2ReplayDevice()
 {
   close();
   context_->removeDevice(this);
-  delete pipeline_;
 }
 
 std::string Freenect2ReplayDevice::getSerialNumber()
@@ -1348,25 +1353,25 @@ void Freenect2ReplayDevice::setIrCameraParams(const Freenect2Device::IrCameraPar
 {
   ir_camera_params_ = params;
   DepthPacketProcessor *proc = pipeline_->getDepthPacketProcessor();
-  if (proc != 0)
+  if (proc != nullptr)
   {
     IrCameraTables tables(params);
-    proc->loadXZTables(&tables.xtable[0], &tables.ztable[0]);
-    proc->loadLookupTable(&tables.lut[0]);
+    proc->loadXZTables(tables.xtable.data(), tables.ztable.data());
+    proc->loadLookupTable(tables.lut.data());
   }
 }
 
 void Freenect2ReplayDevice::setConfiguration(const Freenect2Device::Config &config)
 {
   DepthPacketProcessor *proc = pipeline_->getDepthPacketProcessor();
-  if (proc != 0)
+  if (proc != nullptr)
     proc->setConfiguration(config);
 }
 
 void Freenect2ReplayDevice::setColorFrameListener(FrameListener* listener)
 {
   RgbPacketProcessor* proc = pipeline_->getRgbPacketProcessor();
-  if (proc != NULL)
+  if (proc != nullptr)
   {
     proc->setFrameListener(listener);
   }
@@ -1375,7 +1380,7 @@ void Freenect2ReplayDevice::setColorFrameListener(FrameListener* listener)
 void Freenect2ReplayDevice::setIrAndDepthFrameListener(FrameListener* listener)
 {
   DepthPacketProcessor* proc = pipeline_->getDepthPacketProcessor();
-  if (proc != NULL)
+  if (proc != nullptr)
   {
     proc->setFrameListener(listener);
   }
@@ -1383,7 +1388,7 @@ void Freenect2ReplayDevice::setIrAndDepthFrameListener(FrameListener* listener)
 
 bool Freenect2ReplayDevice::open()
 {
-  LOG_INFO << "opening...";
+    LOG_INFO("opening...");
 
   // May add file checking or params loading
 
@@ -1392,11 +1397,11 @@ bool Freenect2ReplayDevice::open()
 
 bool Freenect2ReplayDevice::close()
 {
-  LOG_INFO << "closing...";
+    LOG_INFO("closing...");
 
   if(running_ == false)
   {
-    LOG_INFO << "already closed, doing nothing";
+        LOG_INFO("already closed, doing nothing");
     return true;
   }
 
@@ -1405,14 +1410,14 @@ bool Freenect2ReplayDevice::close()
     stop();
   }
 
-  if(pipeline_->getRgbPacketProcessor() != 0)
-    pipeline_->getRgbPacketProcessor()->setFrameListener(0);
+  if(pipeline_->getRgbPacketProcessor() != nullptr)
+    pipeline_->getRgbPacketProcessor()->setFrameListener(nullptr);
 
-  if(pipeline_->getDepthPacketProcessor() != 0)
-    pipeline_->getDepthPacketProcessor()->setFrameListener(0);
+  if(pipeline_->getDepthPacketProcessor() != nullptr)
+    pipeline_->getDepthPacketProcessor()->setFrameListener(nullptr);
 
   running_ = false;
-  LOG_INFO << "closed";
+    LOG_INFO("closed");
   return true;
 }
 
@@ -1476,15 +1481,15 @@ void Freenect2ReplayDevice::static_execute(void* arg)
 bool Freenect2ReplayDevice::start()
 {
   running_ = true;
-  t_ = new libfreenect2::thread(static_execute, this);
-  LOG_INFO << "replay started";
+  t_ = std::make_unique<std::thread>(static_execute, this);
+    LOG_INFO("replay started");
   return running_;
 }
 
 bool Freenect2ReplayDevice::startStreams(bool enable_rgb, bool enable_depth)
 {
-  LOG_INFO << "Freenect2ReplayDevice: starting: rgb: " << enable_rgb << ", depth: " << enable_depth;
-  LOG_INFO << "Freenect2ReplayDevice: unimplemented";
+    LOG_INFO("Freenect2ReplayDevice: starting: rgb: {}, depth: {}", enable_rgb, enable_depth);
+    LOG_INFO("Freenect2ReplayDevice: unimplemented");
   return false;
 }
 
@@ -1492,9 +1497,8 @@ bool Freenect2ReplayDevice::stop()
 {
   running_ = false;
   t_->join();
-  delete t_;
-  t_ = NULL;
-  LOG_INFO << "replay stopped";
+  t_.reset();
+    LOG_INFO("replay stopped");
   return true;
 }
 
@@ -1509,39 +1513,39 @@ bool hasSuffix(const std::string& str, const std::string& suffix)
 
 bool parseFrameFilename(const std::string& frame_filename, size_t timestamp_sequence[2])
 {
-  LOG_DEBUG << "parsing: " << frame_filename;
+    LOG_DEBUG("parsing: {}", frame_filename);
   
   if (!hasSuffix(frame_filename, ".depth") &&
     !hasSuffix(frame_filename, ".jpg") &&
     !hasSuffix(frame_filename, ".jpeg"))
   {
-    LOG_ERROR << "wrong suffix in the filename; need .depth, .jpg, or .jpeg";
+        LOG_ERROR("wrong suffix in the filename; need .depth, .jpg, or .jpeg");
     return false;
   }
   
-  size_t ix1 = frame_filename.find("_");
-  size_t ix2 = frame_filename.find("_", ix1 + 1);
-  size_t ix3 = frame_filename.find(".", ix2 + 1);
+  size_t ix1 = frame_filename.find('_');
+  size_t ix2 = frame_filename.find('_', ix1 + 1);
+  size_t ix3 = frame_filename.find('.', ix2 + 1);
 
   std::string ts = frame_filename.substr(0, ix1);
   std::string seq = frame_filename.substr(ix2 + 1, ix3);
 
-  LOG_DEBUG << "ts: " << ts << ", seq: " << seq;
+    LOG_DEBUG("ts: {}, seq: {}", ts, seq);
 
-  if(ts.size() == 0 || seq.size() == 0)
+  if(ts.empty() || seq.empty())
   {
-    LOG_ERROR << "could not extract timestamp or sequence";
+        LOG_ERROR("could not extract timestamp or sequence");
     return false;
   }
   
   timestamp_sequence[0] = atoi(ts.c_str());
   timestamp_sequence[1] = atoi(seq.c_str());
 
-  LOG_DEBUG << "ts: " << timestamp_sequence[0] << ", seq: " << timestamp_sequence[1];
+    LOG_DEBUG("ts: {}, seq: {}", timestamp_sequence[0], timestamp_sequence[1]);
 
   if(timestamp_sequence[0] == 0)
   {
-    LOG_WARNING << "invalid timestamp";
+        LOG_WARNING("invalid timestamp");
     return false;
   }
   
@@ -1558,7 +1562,7 @@ void Freenect2ReplayDevice::run()
 
     if(parseFrameFilename(frame, timestamp_sequence) == false)
     {
-      LOG_ERROR << "could not parse replay frame filename " << frame << ", skipping...";
+            LOG_ERROR("could not parse replay frame filename {}, skipping...", frame);
       continue;
     }
 
@@ -1568,27 +1572,24 @@ void Freenect2ReplayDevice::run()
       
       if(!fd)
       {
-        LOG_ERROR << "failed to open replay frame: " << frame << ", skipping...";
+                LOG_ERROR("failed to open replay frame: {}, skipping...", frame);
         continue;
       }
 
-      fd.seekg(0, fd.end);
+      fd.seekg(0, std::ifstream::end);
       size_t length = fd.tellg();
-      fd.seekg(0, fd.beg);
+      fd.seekg(0, std::ifstream::beg);
 
       if(length != buffer_size_)
       {
-        LOG_ERROR << "file length: " << length
-                  << "exceeds depth image buffer size: "
-                  << buffer_size_ << "; skipping...";
+                LOG_ERROR("file length: {}exceeds depth image buffer size: {}; skipping...", length, buffer_size_);
         continue;
       }
 
       fd.read(reinterpret_cast<char*>(packet_.memory->data), length);
       if(!fd || (size_t)fd.gcount() != length)
       {
-        LOG_ERROR << "failed to read replay frame: " << frame << ": "
-                  << fd.gcount() << " vs. " << length << " bytes";
+                LOG_ERROR("failed to read replay frame: {}: {} vs. {} bytes", frame, fd.gcount(), length);
         continue;
       }
 
@@ -1604,44 +1605,41 @@ void Freenect2ReplayDevice::run()
       }
       else
       {
-        LOG_DEBUG
-          << "skipping a replay depth packet for " << frame
-          << " as depth processor is not ready";
+                LOG_DEBUG("skipping a replay depth packet for {} as depth processor is not ready", frame);
       }
     }
   }
 }
 
 Freenect2Replay::Freenect2Replay() :
-    impl_(new Freenect2ReplayImpl)
+    impl_(std::make_unique<Freenect2ReplayImpl>())
 {
 }
 
 Freenect2Replay::~Freenect2Replay()
 {
-  delete impl_;
 }
 
 Freenect2Device *Freenect2Replay::openDevice(const std::vector<std::string>& frame_filenames)
 {
-  return openDevice(frame_filenames, createDefaultPacketPipeline());
+  return impl_->openDevice(frame_filenames, createDefaultPacketPipeline());
 }
 
 Freenect2Device *Freenect2Replay::openDevice(const std::vector<std::string>& frame_filenames, const PacketPipeline *pipeline)
 {
-  return impl_->openDevice(frame_filenames, pipeline);
+  return impl_->openDevice(frame_filenames, std::unique_ptr<const PacketPipeline>(pipeline));
 }
 
-Freenect2Device *Freenect2ReplayImpl::openDevice(const std::vector<std::string>& frame_filenames, const PacketPipeline *pipeline)
+Freenect2Device *Freenect2ReplayImpl::openDevice(const std::vector<std::string>& frame_filenames, std::unique_ptr<const PacketPipeline> pipeline)
 {
-  Freenect2ReplayDevice *device = new Freenect2ReplayDevice(this, frame_filenames, pipeline);
+  Freenect2ReplayDevice *device = new Freenect2ReplayDevice(this, frame_filenames, std::move(pipeline));
   addDevice(device);
 
   if(!device->open())
   {
     delete device;
-    device = 0;
-    LOG_ERROR << "failed to instantiate a replay device!";
+    device = nullptr;
+        LOG_ERROR("failed to instantiate a replay device!");
   }
 
   return device;

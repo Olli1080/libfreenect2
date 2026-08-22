@@ -29,10 +29,10 @@
 #ifndef REGISTRATION_H_
 #define REGISTRATION_H_
 
-#include <string>
 #include <libfreenect2/config.h>
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener.hpp>
+#include <memory>
 
 namespace libfreenect2
 {
@@ -59,7 +59,7 @@ public:
    * @param rgb_p Color camera parameters. Probably use the factory values for now.
    */
   Registration(Freenect2Device::IrCameraParams depth_p, Freenect2Device::ColorCameraParams rgb_p);
-  ~Registration();
+  ~Registration() noexcept;
 
   /** Undistort and register a single depth point to color camera.
    * @param dx Distorted depth coordinate x (pixel)
@@ -79,7 +79,7 @@ public:
    * @param[out] bigdepth If not `NULL`, return mapping of depth onto colors (1920x1082 float). **1082** not 1080, with a blank top and bottom row.
    * @param[out] color_depth_map Index of mapped color pixel for each depth pixel (512x424).
    */
-  void apply(const Frame* rgb, const Frame* depth, Frame* undistorted, Frame* registered, const bool enable_filter = true, Frame* bigdepth = 0, int* color_depth_map = 0) const;
+  void apply(const Frame* rgb, const Frame* depth, Frame* undistorted, Frame* registered, const bool enable_filter = true, Frame* bigdepth = nullptr, int* color_depth_map = nullptr) const;
 
   /** Undistort depth
    * @param depth Depth image (512x424 float)
@@ -115,7 +115,7 @@ public:
   void getPointXYZ (const Frame* undistorted, int r, int c, float& x, float& y, float& z) const;
 
 private:
-  RegistrationImpl *impl_;
+  std::unique_ptr<RegistrationImpl> impl_;
 
   /* Disable copy and assignment constructors */
   Registration(const Registration&);

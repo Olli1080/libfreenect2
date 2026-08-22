@@ -31,13 +31,14 @@
 
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <string>
 
 namespace libfreenect2
 {
 
 RgbPacketProcessor::RgbPacketProcessor() :
-    listener_(0)
+    listener_(nullptr)
 {
 }
 
@@ -55,7 +56,7 @@ DumpRgbPacketProcessor::~DumpRgbPacketProcessor() {}
 
 void DumpRgbPacketProcessor::process(const RgbPacket &packet)
 {
-  Frame *frame = new Frame(1, 1, 1920*1080*4);
+  auto frame = std::make_unique<Frame>(1, 1, 1920*1080*4);
   frame->sequence = packet.sequence;
   frame->timestamp = packet.timestamp;
   frame->exposure = packet.exposure;
@@ -66,10 +67,9 @@ void DumpRgbPacketProcessor::process(const RgbPacket &packet)
 
   std::memcpy(frame->data, packet.jpeg_buffer, packet.jpeg_buffer_length);
 
-  if (!listener_->onNewFrame(Frame::Color, frame)) {
-    delete frame;
+  if (listener_->onNewFrame(Frame::Color, frame.get())) {
+    frame.release();
   }
-  frame = NULL;
 }
 
 } /* namespace libfreenect2 */

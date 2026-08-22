@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <stdint.h>
 #include <libfreenect2/config.h>
+#include <freenect2_logging/export.h>
 
 namespace libfreenect2
 {
@@ -40,8 +41,12 @@ namespace libfreenect2
  * Receive decoded image frames, and the frame format.
  */
 
-/** Frame format and metadata. @ingroup frame */
-class LIBFREENECT2_API Frame
+/** Frame format and metadata. @ingroup frame
+ * Implementation lives in freenect2_logging (a zero-dependency shared library,
+ * not core freenect2 itself) so backends can construct Frame subclasses
+ * without linking against freenect2 core, which would create a circular DLL
+ * dependency (core links every backend). */
+class FREENECT2_LOGGING_EXPORT Frame
 {
   public:
   /** Available types of frames. */
@@ -81,8 +86,8 @@ class LIBFREENECT2_API Frame
    * @param bytes_per_pixel Bytes per pixel
    * @param data_ Memory to store frame data. If `NULL`, new memory is allocated.
    */
-  Frame(size_t width, size_t height, size_t bytes_per_pixel, unsigned char *data_ = NULL);
-  virtual ~Frame();
+  Frame(size_t width, size_t height, size_t bytes_per_pixel, unsigned char *data_ = nullptr);
+  virtual ~Frame() noexcept;
 
   protected:
   unsigned char* rawdata; ///< Unaligned start of #data.
@@ -94,7 +99,7 @@ class LIBFREENECT2_API Frame
 class LIBFREENECT2_API FrameListener
 {
 public:
-  virtual ~FrameListener();
+  virtual ~FrameListener() noexcept;
 
   /**
    * libfreenect2 calls this function when a new frame is decoded.

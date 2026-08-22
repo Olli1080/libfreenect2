@@ -31,6 +31,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <memory>
 
 #include <libfreenect2/config.h>
 
@@ -61,17 +62,18 @@ class DepthPacketStreamParser : public DataCallback
 {
 public:
   DepthPacketStreamParser();
-  virtual ~DepthPacketStreamParser();
+  ~DepthPacketStreamParser() noexcept override;
 
   void setPacketProcessor(libfreenect2::BaseDepthPacketProcessor *processor);
 
-  virtual void onDataReceived(unsigned char* buffer, size_t length);
+  void onDataReceived(unsigned char* buffer, size_t length) override;
 private:
   libfreenect2::BaseDepthPacketProcessor *processor_;
 
   size_t buffer_size_;
   DepthPacket packet_;
   libfreenect2::Buffer work_buffer_;
+  std::unique_ptr<unsigned char[]> work_buffer_storage_;
 
   uint32_t processed_packets_;
   uint32_t current_sequence_;

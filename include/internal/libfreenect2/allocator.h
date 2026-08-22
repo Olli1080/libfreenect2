@@ -30,6 +30,7 @@
 #define ALLOCATOR_H_
 
 #include <cstddef>
+#include <memory>
 
 namespace libfreenect2
 {
@@ -54,7 +55,7 @@ public:
    */
   virtual Buffer *allocate(size_t size) = 0;
   virtual void free(Buffer *b) = 0;
-  virtual ~Allocator() {}
+  virtual ~Allocator() noexcept = default;
 };
 
 class PoolAllocatorImpl;
@@ -68,7 +69,7 @@ public:
   /* This inner allocator will be freed by PoolAllocator. */
   PoolAllocator(Allocator *inner);
 
-  virtual ~PoolAllocator();
+  ~PoolAllocator() noexcept override;
 
   /* allocate() will block until an allocation is possible.
    * It should be called as late as possible before the memory is required
@@ -80,7 +81,7 @@ public:
    *
    * allocate() MUST be called from the same thread.
    */
-  virtual Buffer *allocate(size_t size);
+  Buffer *allocate(size_t size) override;
 
   /* free() will unblock pending allocation.
    * It should be called as early as possible after the memory is no longer
@@ -90,9 +91,9 @@ public:
    *
    * free() can be called from different threads than allocate().
    */
-  virtual void free(Buffer *b);
+  void free(Buffer *b) override;
 private:
-  PoolAllocatorImpl *impl_;
+  std::unique_ptr<PoolAllocatorImpl> impl_;
 };
 
 } /* namespace libfreenect2 */

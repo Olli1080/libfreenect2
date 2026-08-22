@@ -65,7 +65,7 @@ class UsbControl
 {
 public:
   UsbControl(libusb_device_handle *handle);
-  virtual ~UsbControl();
+  virtual ~UsbControl() noexcept;
 
   enum State
   {

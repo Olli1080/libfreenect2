@@ -38,6 +38,8 @@ namespace libfreenect2
 class DataCallback
 {
 public:
+  virtual ~DataCallback() noexcept = default;
+
   /**
    * Callback that new data has arrived.
    * @param buffer Buffer with new data.

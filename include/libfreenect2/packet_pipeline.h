@@ -31,7 +31,7 @@
 
 #include <libfreenect2/config.h>
 
-#include <stdlib.h>
+#include <memory>
 
 namespace libfreenect2
 {
@@ -57,7 +57,7 @@ public:
   typedef DataCallback PacketParser;
 
   PacketPipeline();
-  virtual ~PacketPipeline();
+  virtual ~PacketPipeline() noexcept;
 
   virtual PacketParser *getRgbPacketParser() const;
   virtual PacketParser *getIrPacketParser() const;
@@ -65,14 +65,14 @@ public:
   virtual RgbPacketProcessor *getRgbPacketProcessor() const;
   virtual DepthPacketProcessor *getDepthPacketProcessor() const;
 protected:
-  PacketPipelineComponents *comp_;
+  std::unique_ptr<PacketPipelineComponents> comp_;
 };
 
  class LIBFREENECT2_API DumpPacketPipeline: public PacketPipeline
  {
  public:
    DumpPacketPipeline();
-   virtual ~DumpPacketPipeline();
+   ~DumpPacketPipeline() noexcept override;
 
    // These are all required to decode depth data
    const unsigned char* getDepthP0Tables(size_t* length);
@@ -87,7 +87,7 @@ class LIBFREENECT2_API CpuPacketPipeline : public PacketPipeline
 {
 public:
   CpuPacketPipeline();
-  virtual ~CpuPacketPipeline();
+  ~CpuPacketPipeline() noexcept override;
 };
 
 #ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
@@ -98,8 +98,8 @@ protected:
   void *parent_opengl_context_;
   bool debug_;
 public:
-  OpenGLPacketPipeline(void *parent_opengl_context = 0, bool debug = false);
-  virtual ~OpenGLPacketPipeline();
+  OpenGLPacketPipeline(void *parent_opengl_context = nullptr, bool debug = false);
+  ~OpenGLPacketPipeline() noexcept override;
 };
 #endif // LIBFREENECT2_WITH_OPENGL_SUPPORT
 
@@ -111,7 +111,7 @@ protected:
   const int deviceId;
 public:
   OpenCLPacketPipeline(const int deviceId = -1);
-  virtual ~OpenCLPacketPipeline();
+  ~OpenCLPacketPipeline() noexcept override;
 };
 
 /*
@@ -126,7 +126,7 @@ protected:
   const int deviceId;
 public:
   OpenCLKdePacketPipeline(const int deviceId = -1);
-  virtual ~OpenCLKdePacketPipeline();
+  ~OpenCLKdePacketPipeline() noexcept override;
 };
 #endif // LIBFREENECT2_WITH_OPENCL_SUPPORT
 
@@ -137,7 +137,7 @@ protected:
   const int deviceId;
 public:
   CudaPacketPipeline(const int deviceId = -1);
-  virtual ~CudaPacketPipeline();
+  ~CudaPacketPipeline() noexcept override;
 };
 
 /*
@@ -152,7 +152,7 @@ protected:
   const int deviceId;
 public:
   CudaKdePacketPipeline(const int deviceId = -1);
-  virtual ~CudaKdePacketPipeline();
+  ~CudaKdePacketPipeline() noexcept override;
 };
 #endif // LIBFREENECT2_WITH_CUDA_SUPPORT
 

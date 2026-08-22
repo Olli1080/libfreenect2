@@ -34,29 +34,29 @@ namespace libfreenect2
 class NewAllocator: public Allocator
 {
 public:
-  virtual Buffer *allocate(size_t size)
-  {
-    Buffer *b = new Buffer;
+	Buffer *allocate(size_t size) override
+	{
+    auto b = std::make_unique<Buffer>();
     b->data = new unsigned char[size];
     b->length = 0;
     b->capacity = size;
     b->allocator = this;
-    return b;
+    return b.release();
   }
 
-  virtual void free(Buffer *b)
-  {
-    if (b == NULL)
+	void free(Buffer *b) override
+	{
+    if (b == nullptr)
       return;
-    delete[] b->data;
-    delete b;
+    std::unique_ptr<Buffer> buffer(b);
+    delete[] buffer->data;
   }
 };
 
 class PoolAllocatorImpl: public Allocator
 {
 private:
-  Allocator *allocator;
+  std::unique_ptr<Allocator> allocator;
   Buffer *buffers[2];
   bool used[2];
   mutex used_lock;
@@ -64,21 +64,21 @@ private:
 public:
   PoolAllocatorImpl(Allocator *a): allocator(a), buffers(), used() {}
 
-  Buffer *allocate(size_t size)
+  Buffer *allocate(size_t size) override
   {
     unique_lock guard(used_lock);
     while (used[0] && used[1])
       WAIT_CONDITION(available_cond, used_lock, guard);
 
     if (!used[0]) {
-      if (buffers[0] == NULL)
+      if (buffers[0] == nullptr)
         buffers[0] = allocator->allocate(size);
       buffers[0]->length = 0;
       buffers[0]->allocator = this;
       used[0] = true;
       return buffers[0];
     } else if (!used[1]) {
-      if (buffers[1] == NULL)
+      if (buffers[1] == nullptr)
         buffers[1] = allocator->allocate(size);
       buffers[1]->length = 0;
       buffers[1]->allocator = this;
@@ -86,11 +86,11 @@ public:
       return buffers[1];
     } else {
       // should never happen
-      return NULL;
+      return nullptr;
     }
   }
 
-  void free(Buffer *b)
+  void free(Buffer *b) override
   {
     lock_guard guard(used_lock);
     if (b == buffers[0]) {
@@ -102,27 +102,25 @@ public:
     }
   }
 
-  ~PoolAllocatorImpl()
+  ~PoolAllocatorImpl() override
   {
     allocator->free(buffers[0]);
     allocator->free(buffers[1]);
-    delete allocator;
   }
 };
 
 PoolAllocator::PoolAllocator():
-  impl_(new PoolAllocatorImpl(new NewAllocator))
+  impl_(std::make_unique<PoolAllocatorImpl>(new NewAllocator))
 {
 }
 
 PoolAllocator::PoolAllocator(Allocator *a):
-  impl_(new PoolAllocatorImpl(a))
+  impl_(std::make_unique<PoolAllocatorImpl>(a))
 {
 }
 
 PoolAllocator::~PoolAllocator()
 {
-  delete impl_;
 }
 
 Buffer *PoolAllocator::allocate(size_t size)

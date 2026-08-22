@@ -34,8 +34,10 @@
 #include <libfreenect2/packet_pipeline.h>
 #include <libfreenect2/color_settings.h>
 #include <libfreenect2/led_settings.h>
+#include <libfreenect2/depth_processor_config.h>
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace libfreenect2
 {
@@ -115,19 +117,9 @@ public:
   };
 
   /** Configuration of depth processing. */
-  struct Config
-  {
-    float MinDepth;             ///< Clip at this minimum distance (meter).
-    float MaxDepth;             ///< Clip at this maximum distance (meter).
+  typedef DepthProcessorConfig Config;
 
-    bool EnableBilateralFilter; ///< Remove some "flying pixels".
-    bool EnableEdgeAwareFilter; ///< Remove pixels on edges because ToF cameras produce noisy edges.
-
-    /** Default is 0.5, 4.5, true, true */
-    LIBFREENECT2_API Config();
-  };
-
-  virtual ~Freenect2Device();
+  virtual ~Freenect2Device() noexcept = default;
 
   virtual std::string getSerialNumber() = 0;
   virtual std::string getFirmwareVersion() = 0;
@@ -213,7 +205,7 @@ public:
    *
    * @return true if ok, false if error.
    */
-  virtual bool start() = 0;
+  [[nodiscard]] virtual bool start() = 0;
 
   /** Start data processing with or without some streams.
    * FrameListener will receive enabled frames when the device is running.
@@ -222,19 +214,19 @@ public:
    * @param depth Whether to enable depth stream.
    * @return true if ok, false if error.
    */
-  virtual bool startStreams(bool rgb, bool depth) = 0;
+  [[nodiscard]] virtual bool startStreams(bool rgb, bool depth) = 0;
 
   /** Stop data processing.
    *
    * @return true if ok, false if error.
    */
-  virtual bool stop() = 0;
+  [[nodiscard]] virtual bool stop() = 0;
 
   /** Shut down the device.
    *
    * @return true if ok, false if error.
    */
-  virtual bool close() = 0;
+  [[nodiscard]] virtual bool close() = 0;
 };
 
 class Freenect2Impl;
@@ -258,13 +250,13 @@ public:
    * @param usb_context If the libusb context is provided,
    * Freenect2 will use it instead of creating one.
    */
-  Freenect2(void *usb_context = 0);
-  virtual ~Freenect2();
+  Freenect2(void *usb_context = nullptr);
+  virtual ~Freenect2() noexcept;
 
   /** Must be called before doing anything else.
    * @return Number of devices, 0 if none
    */
-  int enumerateDevices();
+  [[nodiscard]] int enumerateDevices();
 
   /**
    * @param idx Device index
@@ -281,40 +273,40 @@ public:
    * @param idx Index number. Index numbers are not determinstic during enumeration.
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDevice(int idx);
+  [[nodiscard]] Freenect2Device *openDevice(int idx);
 
   /** Open device by index.
    * @param idx Index number. Index numbers are not determinstic during enumeration.
    * @param factory New PacketPipeline instance. This is always automatically freed.
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDevice(int idx, const PacketPipeline *factory);
+  [[nodiscard]] Freenect2Device *openDevice(int idx, const PacketPipeline *factory);
 
   /** Open device by serial number with default pipeline.
    * @param serial Serial number
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDevice(const std::string &serial);
+  [[nodiscard]] Freenect2Device *openDevice(const std::string &serial);
 
   /** Open device by serial number.
    * @param serial Serial number
    * @param factory New PacketPipeline instance. This is always automatically freed.
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDevice(const std::string &serial, const PacketPipeline *factory);
+  [[nodiscard]] Freenect2Device *openDevice(const std::string &serial, const PacketPipeline *factory);
 
   /** Open the first device with default pipeline.
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDefaultDevice();
+  [[nodiscard]] Freenect2Device *openDefaultDevice();
 
   /** Open the first device.
    * @param factory New PacketPipeline instance. This is always automatically freed.
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDefaultDevice(const PacketPipeline *factory);
+  [[nodiscard]] Freenect2Device *openDefaultDevice(const PacketPipeline *factory);
 private:
-  Freenect2Impl *impl_;
+  std::unique_ptr<Freenect2Impl> impl_;
 
   /* Disable copy and assignment constructors */
   Freenect2(const Freenect2&);
@@ -335,14 +327,14 @@ public:
    * Creates the context.
    */
   Freenect2Replay();
-  virtual ~Freenect2Replay();
+  virtual ~Freenect2Replay() noexcept;
 
   /** Open a device by a collection of stored frame filenames with default pipeline.
    * See filename format below.
    * @param frame_filenames A list of filenames for stored frames.
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDevice(const std::vector<std::string>& frame_filenames);
+  [[nodiscard]] Freenect2Device *openDevice(const std::vector<std::string>& frame_filenames);
 
   /** Open device by a collection of stored frame filenames with the specified pipeline.
    * File names non-compliant with the filename format will be skipped.
@@ -355,10 +347,10 @@ public:
    * @param factory New PacketPipeline instance. This is always automatically freed.
    * @return New device object, or NULL on failure
    */
-  Freenect2Device *openDevice(const std::vector<std::string>& frame_filenames, const PacketPipeline *factory);
+  [[nodiscard]] Freenect2Device *openDevice(const std::vector<std::string>& frame_filenames, const PacketPipeline *factory);
 
 private:
-  Freenect2ReplayImpl *impl_;
+  std::unique_ptr<Freenect2ReplayImpl> impl_;
 
   /* Disable copy and assignment constructors */
   Freenect2Replay(const Freenect2Replay&);

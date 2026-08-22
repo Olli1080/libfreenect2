@@ -66,9 +66,9 @@ namespace Freenect2Driver
   } XnLogSeverity;
 }
 #define FN2DRV_LOG_MASK "Freenect2Driver"
-#define WriteVerbose(str) do { if (DriverServices != NULL) DriverServices->log(XN_LOG_VERBOSE, __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
-#define WriteInfo(str)    do { if (DriverServices != NULL) DriverServices->log(XN_LOG_INFO,    __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
-#define WriteWarning(str) do { if (DriverServices != NULL) DriverServices->log(XN_LOG_WARNING, __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
-#define WriteError(str)   do { if (DriverServices != NULL) DriverServices->log(XN_LOG_ERROR,   __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
+#define WriteVerbose(str) do { if (DriverServices != nullptr) DriverServices->log(XN_LOG_VERBOSE, __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
+#define WriteInfo(str)    do { if (DriverServices != nullptr) DriverServices->log(XN_LOG_INFO,    __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
+#define WriteWarning(str) do { if (DriverServices != nullptr) DriverServices->log(XN_LOG_WARNING, __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
+#define WriteError(str)   do { if (DriverServices != nullptr) DriverServices->log(XN_LOG_ERROR,   __FILE__, __LINE__, FN2DRV_LOG_MASK, std::string(str).c_str()); } while(0)
 #define WriteMessage(str) WriteInfo(str)
 #define LogError(str)     WriteError(str)

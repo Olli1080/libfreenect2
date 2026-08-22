@@ -31,6 +31,7 @@
 #include <libfreenect2/protocol/response.h>
 #include <libfreenect2/logging.h>
 
+#include <algorithm>
 #include <fstream>
 
 #include <limits>
@@ -60,7 +61,7 @@ template<typename ScalarT>
 struct Mat
 {
 private:
-  bool owns_buffer; ///< Whether the matrix owns the data buffer (and should dispose it when deleted).
+  std::unique_ptr<unsigned char[]> owned_buffer_; ///< Owns the data buffer when set.
   unsigned char *buffer_; ///< Data buffer of the matrix (row major).
   unsigned char *buffer_end_; ///< End of the buffer (just after the last element).
   int width_;  ///< Number of elements in the matrix.
@@ -74,18 +75,17 @@ private:
    * @param height Height of the matrix.
    * @param external_buffer If not \c null, use the provided buffer, else make a new one.
    */
-  void allocate(int width, int height, unsigned char *external_buffer = 0)
+  void allocate(int width, int height, unsigned char *external_buffer = nullptr)
   {
     this->width_ = width;
     this->height_ = height;
     x_step = sizeof(ScalarT);
     y_step = width * x_step;
 
-    owns_buffer = external_buffer == 0;
-
-    if(owns_buffer)
+    if(external_buffer == nullptr)
     {
-      buffer_ = new unsigned char[y_step * height];
+      owned_buffer_ = std::make_unique<unsigned char[]>(y_step * height);
+      buffer_ = owned_buffer_.get();
     }
     else
     {
@@ -96,18 +96,17 @@ private:
 
   void deallocate()
   {
-    if(owns_buffer && buffer_ != 0)
+    if(owned_buffer_ != nullptr)
     {
-      delete[] buffer_;
-      owns_buffer = false;
-      buffer_ = 0;
-      buffer_end_ = 0;
+      owned_buffer_.reset();
+      buffer_ = nullptr;
+      buffer_end_ = nullptr;
     }
   }
 
 public:
   /** Default constructor. */
-  Mat():buffer_(0), buffer_end_(0)
+  Mat():buffer_(nullptr), buffer_end_(nullptr)
   {
   }
 
@@ -116,7 +115,7 @@ public:
    * @param height Height of the image.
    * @param width Width of the image.
    */
-  Mat(int height, int width) : owns_buffer(false), buffer_(0)
+  Mat(int height, int width) : buffer_(nullptr)
   {
     create(height, width);
   }
@@ -282,7 +281,8 @@ public:
   bool enable_bilateral_filter, enable_edge_filter;
   DepthPacketProcessor::Parameters params;
 
-  Frame *ir_frame, *depth_frame;
+  std::unique_ptr<Frame> ir_frame;
+  std::unique_ptr<Frame> depth_frame;
 
   bool flip_ptables;
 
@@ -300,21 +300,19 @@ public:
   /** Allocate a new IR frame. */
   void newIrFrame()
   {
-    ir_frame = new Frame(512, 424, 4);
+    ir_frame = std::make_unique<Frame>(512, 424, 4);
     ir_frame->format = Frame::Float;
     //ir_frame = new Frame(512, 424, 12);
   }
 
-  ~CpuDepthPacketProcessorImpl()
+  ~CpuDepthPacketProcessorImpl() override
   {
-    delete ir_frame;
-    delete depth_frame;
   }
 
   /** Allocate a new depth frame. */
   void newDepthFrame()
   {
-    depth_frame = new Frame(512, 424, 4);
+    depth_frame = std::make_unique<Frame>(512, 424, 4);
     depth_frame->format = Frame::Float;
   }
 
@@ -612,7 +610,7 @@ public:
     }
     else
     {
-      float ir_min = std::min(std::min(m0[1], m1[1]), m2[1]);
+      float ir_min = std::min({m0[1], m1[1], m2[1]});
 
       if (ir_min < params.individual_ab_threshold || ir_sum < params.ab_threshold)
       {
@@ -667,8 +665,8 @@ public:
 
         bool slope_positive = 0 < params.ab_confidence_slope;
 
-        float ir_min_ = std::min(std::min(m0[1], m1[1]), m2[1]);
-        float ir_max_ = std::max(std::max(m0[1], m1[1]), m2[1]);
+        float ir_min_ = std::min({m0[1], m1[1], m2[1]});
+        float ir_max_ = std::max({m0[1], m1[1], m2[1]});
 
         float ir_x = slope_positive ? ir_min_ : ir_max_;
 
@@ -708,7 +706,7 @@ public:
 
     // depth
     *depth_out = depth;
-    if(ir_sum_out != 0)
+    if(ir_sum_out != nullptr)
     {
       *ir_sum_out = ir_sum;
     }
@@ -804,13 +802,12 @@ public:
 };
 
 CpuDepthPacketProcessor::CpuDepthPacketProcessor() :
-    impl_(new CpuDepthPacketProcessorImpl())
+    impl_(std::make_unique<CpuDepthPacketProcessorImpl>())
 {
 }
 
 CpuDepthPacketProcessor::~CpuDepthPacketProcessor()
 {
-  delete impl_;
 }
 
 void CpuDepthPacketProcessor::setConfiguration(const libfreenect2::DepthPacketProcessor::Config &config)
@@ -835,7 +832,7 @@ void CpuDepthPacketProcessor::loadP0TablesFromCommandResponse(unsigned char* buf
 
   if(buffer_length < sizeof(libfreenect2::protocol::P0TablesResponse))
   {
-    LOG_ERROR << "P0Table response too short!";
+        LOG_ERROR("P0Table response too short!");
     return;
   }
 
@@ -878,7 +875,7 @@ void CpuDepthPacketProcessor::loadLookupTable(const short *lut)
  */
 void CpuDepthPacketProcessor::process(const DepthPacket &packet)
 {
-  if(listener_ == 0) return;
+  if(listener_ == nullptr) return;
 
   impl_->startTiming();
 
@@ -955,20 +952,24 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
     for(int y = 0; y < 424; ++y)
       for(int x = 0; x < 512; ++x, m_ptr += 9)
       {
-        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), 0);
+        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), nullptr);
       }
   }
 
-  impl_->stopTiming(LOG_INFO);
+  std::string timing = impl_->stopTiming(LOG_SOURCE);
+  if (!timing.empty())
+    LOG_INFO("{}", timing);
 
-  if (listener_ != 0 ){
-    if(listener_->onNewFrame(Frame::Ir, impl_->ir_frame))
+  if (listener_ != nullptr ){
+    if(listener_->onNewFrame(Frame::Ir, impl_->ir_frame.get()))
     {
+      impl_->ir_frame.release();
       impl_->newIrFrame();
     }
 
-    if(listener_->onNewFrame(Frame::Depth, impl_->depth_frame))
+    if(listener_->onNewFrame(Frame::Depth, impl_->depth_frame.get()))
     {
+      impl_->depth_frame.release();
       impl_->newDepthFrame();
     }
   }

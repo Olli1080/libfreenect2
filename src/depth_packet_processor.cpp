@@ -98,7 +98,7 @@ DepthPacketProcessor::Parameters::Parameters()
 }
 
 DepthPacketProcessor::DepthPacketProcessor() :
-    listener_(0)
+    listener_(nullptr)
 {
 }
 
@@ -117,66 +117,57 @@ void DepthPacketProcessor::setFrameListener(libfreenect2::FrameListener *listene
 }
 
 DumpDepthPacketProcessor::DumpDepthPacketProcessor()
-  : p0table_(NULL), xtable_(NULL), ztable_(NULL), lut_(NULL) {
+{
 }
 
 DumpDepthPacketProcessor::~DumpDepthPacketProcessor(){
-  delete[] p0table_;
-  delete[] xtable_;
-  delete[] ztable_;
-  delete[] lut_;
 }
 
 void DumpDepthPacketProcessor::process(const DepthPacket &packet) {
-  Frame* depth_frame = new Frame(1, 1, packet.buffer_length);
+  auto depth_frame = std::make_unique<Frame>(1, 1, packet.buffer_length);
 
   depth_frame->timestamp = packet.timestamp;
   depth_frame->sequence = packet.sequence;
   depth_frame->format = Frame::Raw;
   std::memcpy(depth_frame->data, packet.buffer, packet.buffer_length);
 
-  Frame* ir_frame = new Frame(1, 1, packet.buffer_length, depth_frame->data);
+  auto ir_frame = std::make_unique<Frame>(1, 1, packet.buffer_length, depth_frame->data);
   ir_frame->timestamp = packet.timestamp;
   ir_frame->sequence = packet.sequence;
   ir_frame->data = packet.buffer;
   ir_frame->format = Frame::Raw;
 
-  if (!listener_->onNewFrame(Frame::Ir, ir_frame)) {
-    delete ir_frame;
+  if (listener_->onNewFrame(Frame::Ir, ir_frame.get())) {
+    ir_frame.release();
   }
-  ir_frame = NULL;
-  if (!listener_->onNewFrame(Frame::Depth, depth_frame)) {
-    delete depth_frame;
+
+  if (listener_->onNewFrame(Frame::Depth, depth_frame.get())) {
+    depth_frame.release();
   }
-  depth_frame = NULL;
 }
 
-const unsigned char* DumpDepthPacketProcessor::getP0Tables() { return p0table_; }
+const unsigned char* DumpDepthPacketProcessor::getP0Tables() { return p0table_.data(); }
 
-const float* DumpDepthPacketProcessor::getXTable() { return xtable_; }
-const float* DumpDepthPacketProcessor::getZTable() { return ztable_; }
+const float* DumpDepthPacketProcessor::getXTable() { return xtable_.data(); }
+const float* DumpDepthPacketProcessor::getZTable() { return ztable_.data(); }
 
-const short* DumpDepthPacketProcessor::getLookupTable() { return lut_; }
+const short* DumpDepthPacketProcessor::getLookupTable() { return lut_.data(); }
 
 void DumpDepthPacketProcessor::loadP0TablesFromCommandResponse(unsigned char* buffer, size_t buffer_length) {
-  delete[] p0table_;
-  p0table_ = new unsigned char[buffer_length];
-  std::memcpy(p0table_, buffer, buffer_length);
+  p0table_.resize(buffer_length);
+  std::memcpy(p0table_.data(), buffer, buffer_length);
 }
 
 void DumpDepthPacketProcessor::loadXZTables(const float *xtable, const float *ztable) {
-  delete[] xtable_;
-  xtable_ = new float[TABLE_SIZE];
-  std::memcpy(xtable_, xtable, TABLE_SIZE * sizeof(float));
+  xtable_.resize(TABLE_SIZE);
+  std::memcpy(xtable_.data(), xtable, TABLE_SIZE * sizeof(float));
 
-  delete[] ztable_;
-  ztable_ = new float[TABLE_SIZE];
-  std::memcpy(ztable_, ztable, TABLE_SIZE * sizeof(float));
+  ztable_.resize(TABLE_SIZE);
+  std::memcpy(ztable_.data(), ztable, TABLE_SIZE * sizeof(float));
 }
 
 void DumpDepthPacketProcessor::loadLookupTable(const short *lut) {
-  delete[] lut_;
-  lut_ = new short[LUT_SIZE];
-  std::memcpy(lut_, lut, LUT_SIZE * sizeof(short));
+  lut_.resize(LUT_SIZE);
+  std::memcpy(lut_.data(), lut, LUT_SIZE * sizeof(short));
 }
 } /* namespace libfreenect2 */

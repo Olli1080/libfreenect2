@@ -1,7 +1,7 @@
 /*
  * This file is part of the OpenKinect Project. http://www.openkinect.org
  *
- * Copyright (c) 2015 individual OpenKinect contributors. See the CONTRIB file
+ * Copyright (c) 2014 individual OpenKinect contributors. See the CONTRIB file
  * for details.
  *
  * This code is licensed to you under the terms of the Apache License, version
@@ -24,13 +24,14 @@
  * either License.
  */
 
-/** @file logging.cpp Logging message handler classes. */
+/** @file logging.cpp spdlog-backed logging implementation. */
 
 #include <libfreenect2/logging.h>
-#include <iostream>
 #include <cstdlib>
+#include <cctype>
 #include <string>
 #include <algorithm>
+#include <memory>
 
 #ifdef LIBFREENECT2_WITH_PROFILING
 #include <vector>
@@ -38,155 +39,83 @@
 #include <cmath>
 #endif
 
-#ifdef LIBFREENECT2_WITH_CXX11_SUPPORT
 #include <chrono>
-#endif
 
-#ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
-#include <GLFW/glfw3.h>
-#endif
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_sinks.h>
 
 namespace libfreenect2
 {
-Logger::~Logger() {}
 
-
-Logger::Level Logger::getDefaultLevel()
+spdlog::level::level_enum getDefaultLevel()
 {
-  Logger::Level l = Logger::Info;
+  spdlog::level::level_enum level = spdlog::level::info;
 
   char *env_logger_level_c_str = getenv("LIBFREENECT2_LOGGER_LEVEL");
 
-  if(env_logger_level_c_str != 0)
+  if(env_logger_level_c_str != nullptr)
   {
     std::string env_logger_level_str(env_logger_level_c_str);
-    std::transform(env_logger_level_str.begin(), env_logger_level_str.end(), env_logger_level_str.begin(), ::tolower);
+    std::transform(env_logger_level_str.begin(), env_logger_level_str.end(), env_logger_level_str.begin(),
+                   [](unsigned char c) { return static_cast<char>(::tolower(c)); });
 
     if(env_logger_level_str == "debug")
-      l = Logger::Debug;
+      level = spdlog::level::debug;
     else if(env_logger_level_str == "info")
-      l = Logger::Info;
-    else if(env_logger_level_str == "warning")
-      l = Logger::Warning;
+      level = spdlog::level::info;
+    else if(env_logger_level_str == "warning" || env_logger_level_str == "warn")
+      level = spdlog::level::warn;
     else if(env_logger_level_str == "error")
-      l = Logger::Error;
-    else if(env_logger_level_str == "none")
-      l = Logger::None;
+      level = spdlog::level::err;
+    else if(env_logger_level_str == "none" || env_logger_level_str == "off")
+      level = spdlog::level::off;
   }
 
-  return l;
+  return level;
 }
 
-Logger::Level Logger::level() const
+std::shared_ptr<spdlog::logger> createConsoleLogger(spdlog::level::level_enum level)
 {
-  return level_;
+  // Construct directly rather than via spdlog::stderr_logger_mt(), which
+  // registers the logger by name in spdlog's global registry and throws if
+  // called twice with the same name (it is: once for the default instance
+  // at library load, again whenever a caller does setGlobalLogger(createConsoleLogger(...))).
+  auto sink = std::make_shared<spdlog::sinks::stderr_sink_mt>();
+  auto logger = std::make_shared<spdlog::logger>("freenect2", sink);
+  logger->set_level(level);
+  logger->set_pattern("[%l] %v");
+  // The legacy ConsoleLogger flushed after every line; keep that behavior.
+  logger->flush_on(spdlog::level::debug);
+  return logger;
 }
 
-std::string Logger::level2str(Level l)
+std::shared_ptr<spdlog::logger> createDefaultLogger()
 {
-  switch(l)
-  {
-  case Logger::Debug:
-    return "Debug";
-  case Logger::Info:
-    return "Info";
-  case Logger::Warning:
-    return "Warning";
-  case Logger::Error:
-    return "Error";
-  default:
-    return "";
-  }
+  return createConsoleLogger(getDefaultLevel());
 }
 
-/** Logger class to the console (stderr). */
-class ConsoleLogger : public Logger
-{
-public:
-  ConsoleLogger(Level level)
-  {
-    level_ = level;
-    //std::ios_base::unitbuf causes automatic flushing which access
-    //thread local variable via std::uncaught_exception().
-    //This causes deadlock with ocl-icd until its recent update.
-    //Accessing TLS has a slight performance penalty.
-    //log() always flush the ostream so unitbuf is unnecessary anyway.
-    std::nounitbuf(std::cerr);
-  }
-  virtual ~ConsoleLogger() {}
-  virtual void log(Level level, const std::string &message)
-  {
-    if(level > level_) return;
+static std::shared_ptr<spdlog::logger> global_logger_ = createDefaultLogger();
 
-    (level <= Warning ? std::cerr : std::cout) << "[" << level2str(level) << "] " << message << std::endl;
-  }
-};
-
-Logger *createConsoleLogger(Logger::Level level)
+std::shared_ptr<spdlog::logger> getGlobalLogger()
 {
-  return new ConsoleLogger(level);
+  return std::atomic_load(&global_logger_);
 }
 
-Logger *createConsoleLoggerWithDefaultLevel()
+void setGlobalLogger(std::shared_ptr<spdlog::logger> logger)
 {
-  return new ConsoleLogger(Logger::getDefaultLevel());
+  if(logger == nullptr)
+    logger = createDefaultLogger();
+  std::atomic_store(&global_logger_, std::move(logger));
 }
 
-LogMessage::LogMessage(Logger *logger, Logger::Level level) : logger_(logger), level_(level)
+spdlog::level::level_enum getLogLevel()
 {
-
+  return getGlobalLogger()->level();
 }
 
-std::string getShortName(const char *func)
+void setLogLevel(spdlog::level::level_enum level)
 {
-  std::string src(func);
-  size_t end = src.rfind('(');
-  if (end == std::string::npos)
-    end = src.size();
-  size_t begin = 1 + src.rfind(' ', end);
-  size_t first_ns = src.find("::", begin);
-  if (first_ns != std::string::npos)
-    begin = first_ns + 2;
-  size_t last_ns = src.rfind("::", end);
-  if (last_ns != std::string::npos)
-    end = last_ns;
-  return src.substr(begin, end - begin);
-}
-
-LogMessage::LogMessage(Logger *logger, Logger::Level level, const char *source):
-  logger_(logger), level_(level)
-{
-  stream_ << "[" << getShortName(source) << "] ";
-}
-
-LogMessage::~LogMessage()
-{
-  if(logger_ != 0 && stream_.good())
-  {
-    const std::string &message = stream_.str();
-    if (message.size())
-      logger_->log(level_, message);
-  }
-}
-
-std::ostream &LogMessage::stream()
-{
-  return stream_;
-}
-
-static ConsoleLogger defaultLogger_(Logger::getDefaultLevel());
-static Logger *userLogger_ = &defaultLogger_;
-
-Logger *getGlobalLogger()
-{
-  return userLogger_;
-}
-
-void setGlobalLogger(Logger *logger)
-{
-  if (userLogger_ != &defaultLogger_)
-    delete userLogger_;
-  userLogger_ = logger;
+  getGlobalLogger()->set_level(level);
 }
 
 /** Timer for measuring performance. */
@@ -198,9 +127,6 @@ class Timer
 
   Timer()
   {
-#if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
-    glfwInit();
-#endif
     reset();
   }
 
@@ -210,7 +136,6 @@ class Timer
     count = 0;
   }
 
-#ifdef LIBFREENECT2_WITH_CXX11_SUPPORT
   std::chrono::time_point<std::chrono::high_resolution_clock> time_start;
 
   void start()
@@ -226,31 +151,6 @@ class Timer
     count++;
     return this_duration;
   }
-#elif defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
-  double time_start;
-
-  void start()
-  {
-    time_start = glfwGetTime();
-  }
-
-  double stop()
-  {
-    double this_duration = glfwGetTime() - time_start;
-    duration += this_duration;
-    count++;
-    return this_duration;
-  }
-#else
-  void start()
-  {
-  }
-
-  double stop()
-  {
-    return 0;
-  }
-#endif
 };
 
 class WithPerfLoggingImpl: public Timer
@@ -280,55 +180,52 @@ public:
       diff[i] = v[i] - mean;
     }
     double sqsum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
-    double std = std::sqrt(sqsum / (n-1));
+    double stddev = std::sqrt(sqsum / (n-1));
 
-    std::cout << name << v[0] << " " << v[n/20] << " " << v[n/2] << " " << v[n - (n+19)/20] << " " << v[n-1] << " mean=" << mean << " std=" << std <<  " n=" << n << std::endl;
+    auto logger = getGlobalLogger();
+    logger->info("[{}] {:.6g} {:.6g} {:.6g} {:.6g} {:.6g} mean={:.6g} std={:.6g} n={}", name, v[0], v[n/20], v[n/2], v[n - (n+19)/20], v[n-1], mean, stddev, n);
   }
+#else
+  WithPerfLoggingImpl() = default;
 #endif
 
-  std::ostream &stop(std::ostream &stream)
+  void start()
   {
-#ifndef LIBFREENECT2_WITH_PROFILING
-    Timer::stop();
-#else
+    Timer::start();
+  }
+
+  std::string stop(const char *source)
+  {
+#ifdef LIBFREENECT2_WITH_PROFILING
     double this_duration = Timer::stop();
-    if (name.empty())
-    {
-      std::stringstream &ss = static_cast<std::stringstream &>(stream);
-      name = ss.str();
-    }
+    if(name.empty())
+      name = getShortName(source);
     stats.push_back(this_duration*1e3);
+#else
+    Timer::stop();
 #endif
-    if (count < 100)
-    {
-      stream.setstate(std::ios::eofbit);
-      return stream;
-    }
+    if(count < 100)
+      return std::string();
     double avg = duration / count;
     reset();
-    stream << "avg. time: " << (avg * 1000) << "ms -> ~" << (1.0/avg) << "Hz";
-    return stream;
+    return fmt::format("avg. time: {:.6g}ms -> ~{:.6g}Hz", avg * 1000, 1.0/avg);
   }
 };
 
-WithPerfLogging::WithPerfLogging()
-  :impl_(new WithPerfLoggingImpl)
+WithPerfLogging::WithPerfLogging() : impl_(std::make_unique<WithPerfLoggingImpl>())
 {
 }
 
-WithPerfLogging::~WithPerfLogging()
-{
-  delete impl_;
-}
+WithPerfLogging::~WithPerfLogging() = default;
 
 void WithPerfLogging::startTiming()
 {
   impl_->start();
 }
 
-std::ostream &WithPerfLogging::stopTiming(std::ostream &stream)
+std::string WithPerfLogging::stopTiming(const char *source)
 {
-  return impl_->stop(stream);
+  return impl_->stop(source);
 }
 
 } /* namespace libfreenect2 */

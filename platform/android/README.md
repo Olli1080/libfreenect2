@@ -16,7 +16,11 @@
 * See the [official documentation](https://github.com/libjpeg-turbo/libjpeg-turbo/blob/master/BUILDING.md) for instructions to build libturbojpeg for Android.
 * May encounter problems when using the master branch of libturbojpeg with libfreenect2. However, [2.0.1 release](https://github.com/libjpeg-turbo/libjpeg-turbo/releases/tag/2.0.1) and older versions work well.
 
-## 4. Build libfreenect2
+## 4. Build spdlog and fmt
+
+* libfreenect2's logging is built on [spdlog](https://github.com/gabime/spdlog), which uses [fmt](https://github.com/fmtlib/fmt) as an external dependency (`SPDLOG_FMT_EXTERNAL`). Build both as shared libraries for Android with the NDK toolchain (e.g. via their CMake builds with `-DBUILD_SHARED_LIBS=ON -DSPDLOG_FMT_EXTERNAL=ON` for spdlog, `-DBUILD_SHARED_LIBS=ON` for fmt).
+
+## 5. Build libfreenect2
 
 * Grab libfreenect2 and change into Android build directory.
 
@@ -32,11 +36,17 @@ cd libfreenect2/platform/android/jni
   LIBUSB_ROOT=/path/to/libusb/root \
   LIBUSB_SHARED_REL=relative/path/to/libusb1.0.so \
   LIBTURBOJPEG_ROOT=/path/to/libturbojpeg \
-  LIBTURBOJPEG_SHARED_REL=relative/path/to/libturbojpeg.so
+  LIBTURBOJPEG_SHARED_REL=relative/path/to/libturbojpeg.so \
+  LIBSPDLOG_ROOT=/path/to/spdlog \
+  LIBSPDLOG_SHARED_REL=relative/path/to/libspdlog.so \
+  LIBFMT_ROOT=/path/to/fmt \
+  LIBFMT_SHARED_REL=relative/path/to/libfmt.so
 ```
+
+* `LIBSPDLOG_ROOT` and `LIBFMT_ROOT` must each contain an `include/` directory with that library's headers, alongside the shared library referenced by `*_SHARED_REL`.
 
 * You will find the built binaries in platform/android/libs.
 
-## 5. Notes
+## 6. Notes
 
 * Now we can only use CPU for depth packet processing. OpenGL ES on Android should work, but it's not yet supported.

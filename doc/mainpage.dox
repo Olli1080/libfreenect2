@@ -93,10 +93,18 @@ This shows how to set up the logger and logging level.
 
 @snippet Protonect.cpp logging
 
-Though @copydetails libfreenect2::createConsoleLoggerWithDefaultLevel
+The logging backend is %spdlog. The default logger reads the
+`LIBFREENECT2_LOGGER_LEVEL` environment variable (`none`, `error`, `warning`,
+`info`, `debug`; default `info`).
 
-You can implement a custom [Logger](@ref libfreenect2::Logger) and redirect
+You can pass any %spdlog logger via `setGlobalLogger` to redirect
 %libfreenect2's log messages to desired places.
+
+The library keeps its own dedicated logger instance and never uses
+%spdlog's default logger. You can adjust the level of that instance at
+runtime with `getLogLevel`/`setLogLevel`; passing `spdlog::level::off`
+to `setLogLevel` disables all logging from %libfreenect2 without touching
+your application's loggers.
 
 Here is an example to save log messages to a file.
 
@@ -107,10 +115,7 @@ And use it
 @snippet Protonect.cpp file logging
 
 %libfreenect2 uses a single global logger regardless of number of contexts and
-devices. You may have to implement thread safety measure in
-[log()](@ref libfreenect2::Logger::log), which is called from multiple threads.
-Console loggers are thread safe because `std::cout` and `std::cerr` are thread
-safe.
+devices. %spdlog loggers are thread-safe.
 
 Initialize and Discover Devices
 -------------------------------

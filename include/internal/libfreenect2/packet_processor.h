@@ -29,7 +29,8 @@
 #ifndef PACKET_PROCESSOR_H_
 #define PACKET_PROCESSOR_H_
 
-#include "libfreenect2/allocator.h"
+#include "internal/libfreenect2/allocator.h"
+#include <string_view>
 
 namespace libfreenect2
 {
@@ -42,17 +43,17 @@ template<typename PacketT>
 class PacketProcessor
 {
 public:
-  virtual ~PacketProcessor() {}
+  virtual ~PacketProcessor() noexcept = default;
 
   /**
    * Test whether the processor is idle.
    * @return True if the processor is idle, else false.
    */
-  virtual bool ready() { return true; }
+  virtual bool ready() const { return true; }
 
-  virtual bool good() { return true; }
+  virtual bool good() const { return true; }
 
-  virtual const char *name() { return "a packet processor"; }
+  virtual std::string_view name() { return "a packet processor"; }
 
   /**
    * A new packet has arrived, process it.
@@ -72,7 +73,7 @@ public:
     Allocator *a = getAllocator();
     if (a)
       a->free(p.memory);
-    p.memory = NULL;
+    p.memory = nullptr;
   }
 
 protected:
@@ -91,9 +92,9 @@ class NoopPacketProcessor : public PacketProcessor<PacketT>
 {
 public:
   NoopPacketProcessor() {}
-  virtual ~NoopPacketProcessor() {}
+  ~NoopPacketProcessor() noexcept override = default;
 
-  virtual void process(const PacketT &packet) {}
+  void process(const PacketT &packet) override {}
 };
 
 /**

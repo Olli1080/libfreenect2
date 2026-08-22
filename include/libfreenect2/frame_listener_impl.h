@@ -30,6 +30,7 @@
 #define FRAME_LISTENER_IMPL_H_
 
 #include <map>
+#include <memory>
 
 #include <libfreenect2/config.h>
 #include <libfreenect2/frame_listener.hpp>
@@ -52,7 +53,7 @@ public:
    * @param frame_types Use bitwise or to combine multiple types, e.g. `Frame::Ir | Frame::Depth`.
    */
   SyncMultiFrameListener(unsigned int frame_types);
-  virtual ~SyncMultiFrameListener();
+  ~SyncMultiFrameListener() noexcept override;
 
   /** Test if there are new frames. Non-blocking. */
   bool hasNewFrame() const;
@@ -72,9 +73,9 @@ public:
   /** Shortcut to delete all frames in `frame`. */
   void release(FrameMap &frame);
 
-  virtual bool onNewFrame(Frame::Type type, Frame *frame);
+  bool onNewFrame(Frame::Type type, Frame *frame) override;
 private:
-  SyncMultiFrameListenerImpl *impl_;
+  std::unique_ptr<SyncMultiFrameListenerImpl> impl_;
 
   /* Disable copy and assignment constructors */
   SyncMultiFrameListener(const SyncMultiFrameListener&);

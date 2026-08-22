@@ -30,6 +30,7 @@
 #include <libfreenect2/logging.h>
 
 #include <stdint.h>
+#include <string>
 
 namespace libfreenect2
 {
@@ -77,7 +78,7 @@ namespace libusb_ext
     uint16_t wValue  = 40; // 40 nanoseconds
     uint16_t wIndex  = 0;
     uint16_t wLength = 0;
-    uint8_t *data    = 0;
+    uint8_t *data    = nullptr;
 
     return libusb_control_transfer(handle, bmRequestType, bRequest, wValue, wIndex, data, wLength, timeout);
   }
@@ -106,7 +107,7 @@ namespace libusb_ext
     uint16_t wValue  = static_cast<uint16_t>(feature_selector);
     uint16_t wIndex  = 0;
     uint16_t wLength = 0;
-    uint8_t *data    = 0;
+    uint8_t *data    = nullptr;
 
     return libusb_control_transfer(handle, bmRequestType, bRequest, wValue, wIndex, data, wLength, timeout);
   }
@@ -125,7 +126,7 @@ namespace libusb_ext
     uint16_t wValue  = static_cast<uint16_t>(feature_selector);
     uint16_t wIndex  = suspend_options << 8 | 0;
     uint16_t wLength = 0;
-    uint8_t *data    = 0;
+    uint8_t *data    = nullptr;
 
     return libusb_control_transfer(handle, bmRequestType, bRequest, wValue, wIndex, data, wLength, timeout);
   }
@@ -146,7 +147,7 @@ namespace libusb_ext
         if(interface.num_altsetting > alternate_setting)
         {
           const libusb_interface_descriptor &interface_desc = interface.altsetting[alternate_setting];
-          const libusb_endpoint_descriptor *endpoint_desc = 0;
+          const libusb_endpoint_descriptor *endpoint_desc = nullptr;
 
           for(int endpoint_idx = 0; endpoint_idx < interface_desc.bNumEndpoints; ++endpoint_idx)
           {
@@ -157,11 +158,11 @@ namespace libusb_ext
             }
           }
 
-          if(endpoint_desc != 0)
+          if(endpoint_desc != nullptr)
           {
             libusb_ss_endpoint_companion_descriptor *companion_desc;
             // ctx is only used for error reporting, libusb should better ask for a libusb_device anyway...
-            r = libusb_get_ss_endpoint_companion_descriptor(NULL /* ctx */, endpoint_desc, &companion_desc);
+            r = libusb_get_ss_endpoint_companion_descriptor(nullptr /* ctx */, endpoint_desc, &companion_desc);
 
             if(r != LIBUSB_SUCCESS) continue;
 
@@ -189,8 +190,13 @@ UsbControl::~UsbControl()
 {
 }
 
-#define CHECK_LIBUSB_RESULT(__CODE, __RESULT) if((__CODE = (__RESULT == LIBUSB_SUCCESS ? Success : Error)) == Error) LOG_ERROR
-#define WRITE_LIBUSB_ERROR(__RESULT) libusb_error_name(__RESULT) << " " << libusb_strerror((libusb_error)__RESULT) << ". Try debugging with environment variable: export LIBUSB_DEBUG=3 ."
+#define CHECK_LIBUSB_RESULT(__CODE, __RESULT) if((__CODE = (__RESULT == LIBUSB_SUCCESS ? Success : Error)) == Error)
+
+static std::string writeLibusbError(int result)
+{
+  return std::string(libusb_error_name(result)) + " " + libusb_strerror((libusb_error)result)
+       + ". Try debugging with environment variable: export LIBUSB_DEBUG=3 .";
+}
 
 UsbControl::ResultCode UsbControl::setConfiguration()
 {
@@ -200,14 +206,14 @@ UsbControl::ResultCode UsbControl::setConfiguration()
   int r;
 
   r = libusb_get_configuration(handle_, &current_config_id);
-  CHECK_LIBUSB_RESULT(code, r) << "failed to get configuration! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to get configuration! {}", writeLibusbError(r));
 
   if(code == Success)
   {
     if(current_config_id != desired_config_id)
     {
       r = libusb_set_configuration(handle_, desired_config_id);
-      CHECK_LIBUSB_RESULT(code, r) << "failed to set configuration! " << WRITE_LIBUSB_ERROR(r);
+      CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to set configuration! {}", writeLibusbError(r));
     }
   }
 
@@ -220,12 +226,12 @@ UsbControl::ResultCode UsbControl::claimInterfaces()
   int r;
 
   r = libusb_claim_interface(handle_, ControlAndRgbInterfaceId);
-  CHECK_LIBUSB_RESULT(code, r) << "failed to claim interface with ControlAndRgbInterfaceId(="<< ControlAndRgbInterfaceId << ")! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to claim interface with ControlAndRgbInterfaceId({})! {}", ControlAndRgbInterfaceId, writeLibusbError(r));
 
   if(code == Success)
   {
     r = libusb_claim_interface(handle_, IrInterfaceId);
-    CHECK_LIBUSB_RESULT(code, r) << "failed to claim interface with IrInterfaceId(="<< IrInterfaceId << ")! " << WRITE_LIBUSB_ERROR(r);
+    CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to claim interface with IrInterfaceId({})! {}", IrInterfaceId, writeLibusbError(r));
   }
 
   return code;
@@ -237,12 +243,12 @@ UsbControl::ResultCode UsbControl::releaseInterfaces()
   int r;
 
   r = libusb_release_interface(handle_, ControlAndRgbInterfaceId);
-  CHECK_LIBUSB_RESULT(code, r) << "failed to release interface with ControlAndRgbInterfaceId(="<< ControlAndRgbInterfaceId << ")! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to release interface with ControlAndRgbInterfaceId({})! {}", ControlAndRgbInterfaceId, writeLibusbError(r));
 
   if(code == Success)
   {
     r = libusb_release_interface(handle_, IrInterfaceId);
-    CHECK_LIBUSB_RESULT(code, r) << "failed to release interface with IrInterfaceId(="<< IrInterfaceId << ")! " << WRITE_LIBUSB_ERROR(r);
+    CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to release interface with IrInterfaceId({})! {}", IrInterfaceId, writeLibusbError(r));
   }
 
   return code;
@@ -253,7 +259,7 @@ UsbControl::ResultCode UsbControl::setIsochronousDelay()
   int r = libusb_ext::set_isochronous_delay(handle_, timeout_);
 
   UsbControl::ResultCode code;
-  CHECK_LIBUSB_RESULT(code, r) << "failed to set isochronous delay! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to set isochronous delay! {}", writeLibusbError(r));
   return code;
 }
 
@@ -262,7 +268,7 @@ UsbControl::ResultCode UsbControl::setPowerStateLatencies()
   int r = libusb_ext::set_sel(handle_, timeout_, 0x55, 0, 0x55, 0);
 
   UsbControl::ResultCode code;
-  CHECK_LIBUSB_RESULT(code, r) << "failed to set power state latencies! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to set power state latencies! {}", writeLibusbError(r));
   return code;
 }
 
@@ -272,12 +278,12 @@ UsbControl::ResultCode UsbControl::enablePowerStates()
   int r;
 
   r = libusb_ext::set_feature(handle_, timeout_, libusb_ext::U1_ENABLE);
-  CHECK_LIBUSB_RESULT(code, r) << "failed to enable power states U1! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to enable power states U1! {}", writeLibusbError(r));
 
   if(code == Success)
   {
     r = libusb_ext::set_feature(handle_, timeout_, libusb_ext::U2_ENABLE);
-    CHECK_LIBUSB_RESULT(code, r) << "failed to enable power states U2! " << WRITE_LIBUSB_ERROR(r);
+    CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to enable power states U2! {}", writeLibusbError(r));
   }
 
   return code;
@@ -289,7 +295,7 @@ UsbControl::ResultCode UsbControl::setVideoTransferFunctionState(UsbControl::Sta
   int r = libusb_ext::set_feature_function_suspend(handle_, timeout_, suspend, suspend);
 
   UsbControl::ResultCode code;
-  CHECK_LIBUSB_RESULT(code, r) << "failed to set video transfer function state! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to set video transfer function state! {}", writeLibusbError(r));
   return code;
 }
 
@@ -299,7 +305,7 @@ UsbControl::ResultCode UsbControl::setIrInterfaceState(UsbControl::State state)
   int r = libusb_set_interface_alt_setting(handle_, IrInterfaceId, alternate_setting);
 
   UsbControl::ResultCode code;
-  CHECK_LIBUSB_RESULT(code, r) << "failed to set ir interface state! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to set ir interface state! {}", writeLibusbError(r));
   return code;
 }
 
@@ -317,7 +323,7 @@ UsbControl::ResultCode UsbControl::getIrMaxIsoPacketSize(int &size)
   }
 
   UsbControl::ResultCode code;
-  CHECK_LIBUSB_RESULT(code, r) << "failed to get max iso packet size! " << WRITE_LIBUSB_ERROR(r);
+  CHECK_LIBUSB_RESULT(code, r) LOG_ERROR("failed to get max iso packet size! {}", writeLibusbError(r));
   return code;
 }
 

@@ -29,18 +29,23 @@
 #include <libfreenect2/usb/transfer_pool.h>
 #include <libfreenect2/logging.h>
 
-#define WRITE_LIBUSB_ERROR(__RESULT) libusb_error_name(__RESULT) << " " << libusb_strerror((libusb_error)__RESULT)
+#include <string>
 
 namespace libfreenect2
 {
 namespace usb
 {
 
+static std::string writeLibusbError(int result)
+{
+  return std::string(libusb_error_name(result)) + " " + libusb_strerror((libusb_error)result);
+}
+
 TransferPool::TransferPool(libusb_device_handle* device_handle, unsigned char device_endpoint) :
-    callback_(0),
+    callback_(nullptr),
     device_handle_(device_handle),
     device_endpoint_(device_endpoint),
-    buffer_(0),
+    buffer_(nullptr),
     buffer_size_(0),
     enable_submit_(false)
 {
@@ -61,23 +66,22 @@ void TransferPool::disableSubmission()
   enable_submit_ = false;
 }
 
-bool TransferPool::enabled()
+bool TransferPool::enabled() const
 {
   return enable_submit_;
 }
 
 void TransferPool::deallocate()
 {
-  for(TransferQueue::iterator it = transfers_.begin(); it != transfers_.end(); ++it)
+  for(auto& t : transfers_)
   {
-    libusb_free_transfer(it->transfer);
+    libusb_free_transfer(t.transfer);
   }
   transfers_.clear();
 
-  if(buffer_ != 0)
+  if(buffer_ != nullptr)
   {
-    delete[] buffer_;
-    buffer_ = 0;
+    buffer_.reset();
     buffer_size_ = 0;
   }
 }
@@ -86,7 +90,7 @@ bool TransferPool::submit()
 {
   if(!enable_submit_)
   {
-    LOG_WARNING << "transfer submission disabled!";
+        LOG_WARNING("transfer submission disabled!");
     return false;
   }
 
@@ -100,7 +104,7 @@ bool TransferPool::submit()
 
     if(r != LIBUSB_SUCCESS)
     {
-      LOG_ERROR << "failed to submit transfer: " << WRITE_LIBUSB_ERROR(r);
+            LOG_ERROR("failed to submit transfer: {}", writeLibusbError(r));
       transfers_[i].setStopped(true);
       failcount++;
     }
@@ -108,7 +112,7 @@ bool TransferPool::submit()
 
   if (failcount == transfers_.size())
   {
-    LOG_ERROR << "all submissions failed. Try debugging with environment variable: LIBUSB_DEBUG=3.";
+        LOG_ERROR("all submissions failed. Try debugging with environment variable: LIBUSB_DEBUG=3.");
     return false;
   }
 
@@ -117,26 +121,26 @@ bool TransferPool::submit()
 
 void TransferPool::cancel()
 {
-  for(TransferQueue::iterator it = transfers_.begin(); it != transfers_.end(); ++it)
+  for(auto& t : transfers_)
   {
-    int r = libusb_cancel_transfer(it->transfer);
+    int r = libusb_cancel_transfer(t.transfer);
 
     if(r != LIBUSB_SUCCESS && r != LIBUSB_ERROR_NOT_FOUND)
     {
-      LOG_ERROR << "failed to cancel transfer: " << WRITE_LIBUSB_ERROR(r);
+            LOG_ERROR("failed to cancel transfer: {}", writeLibusbError(r));
     }
   }
 
   for(;;)
   {
-    libfreenect2::this_thread::sleep_for(libfreenect2::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     size_t stopped_transfers = 0;
-    for(TransferQueue::iterator it = transfers_.begin(); it != transfers_.end(); ++it)
-      stopped_transfers += it->getStopped();
+    for(auto& t : transfers_)
+      stopped_transfers += t.getStopped();
     if (stopped_transfers == transfers_.size())
       break;
-    LOG_INFO << "waiting for transfer cancellation";
-    libfreenect2::this_thread::sleep_for(libfreenect2::chrono::milliseconds(1000));
+        LOG_INFO("waiting for transfer cancellation");
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
 }
 
@@ -148,10 +152,10 @@ void TransferPool::setCallback(DataCallback *callback)
 void TransferPool::allocateTransfers(size_t num_transfers, size_t transfer_size)
 {
   buffer_size_ = num_transfers * transfer_size;
-  buffer_ = new unsigned char[buffer_size_];
+  buffer_ = std::make_unique<unsigned char[]>(buffer_size_);
   transfers_.reserve(num_transfers);
 
-  unsigned char *ptr = buffer_;
+  unsigned char *ptr = buffer_.get();
 
   for(size_t i = 0; i < num_transfers; ++i)
   {
@@ -200,7 +204,7 @@ void TransferPool::onTransferComplete(TransferPool::Transfer* t)
 
   if(r != LIBUSB_SUCCESS)
   {
-    LOG_ERROR << "failed to submit transfer: " << WRITE_LIBUSB_ERROR(r);
+        LOG_ERROR("failed to submit transfer: {}", writeLibusbError(r));
     t->setStopped(true);
   }
 }

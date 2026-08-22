@@ -1,0 +1,46 @@
+{
+  "name": "libfreenect2",
+  "version": "0.2.0",
+  "dependencies": [
+    "libusb",
+    "libjpeg-turbo",
+    "spdlog"
+  ],
+  "features": {
+    "opengl": {
+      "description": "Enable OpenGL depth processing and viewer (requires GLFW3)",
+      "dependencies": [
+        "glfw3",
+        "opengl"
+      ]
+    },
+    "opencl": {
+      "description": "Enable OpenCL depth processing",
+      "dependencies": [
+        "opencl"
+      ]
+    },
+    "opencv": {
+      "description": "Enable OpenCV-based streamer_recorder tool",
+      "dependencies": [
+        "opencv"
+      ]
+    },
+    "openni2": {
+      "description": "Build OpenNI2 driver plugin",
+      "dependencies": [
+        "openni2"
+      ]
+    },
+    "pcl": {
+      "description": "Build PCL point cloud example",
+      "dependencies": [
+        {
+          "name": "pcl",
+          "default-features": false,
+          "features": ["visualization"]
+        }
+      ]
+    }
+  }
+}

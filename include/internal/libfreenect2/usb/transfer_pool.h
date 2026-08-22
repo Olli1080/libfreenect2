@@ -27,6 +27,7 @@
 #ifndef TRANSFER_POOL_H_
 #define TRANSFER_POOL_H_
 
+#include <memory>
 #include <vector>
 #include <libusb.h>
 
@@ -43,7 +44,7 @@ class TransferPool
 {
 public:
   TransferPool(libusb_device_handle *device_handle, unsigned char device_endpoint);
-  virtual ~TransferPool();
+  virtual ~TransferPool() noexcept;
 
   void deallocate();
 
@@ -51,7 +52,7 @@ public:
 
   void disableSubmission();
 
-  bool enabled();
+  bool enabled() const;
 
   bool submit();
 
@@ -59,7 +60,7 @@ public:
 
   void setCallback(DataCallback *callback);
 protected:
-  libfreenect2::mutex stopped_mutex;
+  std::mutex stopped_mutex;
   struct Transfer
   {
     libusb_transfer *transfer;
@@ -69,12 +70,12 @@ protected:
       transfer(transfer), pool(pool), stopped(true) {}
     void setStopped(bool value)
     {
-      libfreenect2::lock_guard guard(pool->stopped_mutex);
+        std::lock_guard<std::mutex> guard(pool->stopped_mutex);
       stopped = value;
     }
-    bool getStopped()
+    bool getStopped() const
     {
-      libfreenect2::lock_guard guard(pool->stopped_mutex);
+        std::lock_guard<std::mutex> guard(pool->stopped_mutex);
       return stopped;
     }
   };
@@ -94,7 +95,7 @@ private:
   unsigned char device_endpoint_;
 
   TransferQueue transfers_;
-  unsigned char *buffer_;
+  std::unique_ptr<unsigned char[]> buffer_;
   size_t buffer_size_;
 
   bool enable_submit_;
@@ -108,28 +109,28 @@ class BulkTransferPool : public TransferPool
 {
 public:
   BulkTransferPool(libusb_device_handle *device_handle, unsigned char device_endpoint);
-  virtual ~BulkTransferPool();
+  ~BulkTransferPool() noexcept override;
 
   void allocate(size_t num_transfers, size_t transfer_size);
 
 protected:
-  virtual libusb_transfer *allocateTransfer();
-  virtual void fillTransfer(libusb_transfer *transfer);
-  virtual void processTransfer(libusb_transfer *transfer);
+  libusb_transfer *allocateTransfer() override;
+  void fillTransfer(libusb_transfer *transfer) override;
+  void processTransfer(libusb_transfer *transfer) override;
 };
 
 class IsoTransferPool : public TransferPool
 {
 public:
   IsoTransferPool(libusb_device_handle *device_handle, unsigned char device_endpoint);
-  virtual ~IsoTransferPool();
+  ~IsoTransferPool() noexcept override;
 
   void allocate(size_t num_transfers, size_t num_packets, size_t packet_size);
 
 protected:
-  virtual libusb_transfer *allocateTransfer();
-  virtual void fillTransfer(libusb_transfer *transfer);
-  virtual void processTransfer(libusb_transfer *transfer);
+  libusb_transfer *allocateTransfer() override;
+  void fillTransfer(libusb_transfer *transfer) override;
+  void processTransfer(libusb_transfer *transfer) override;
 
 private:
   size_t num_packets_;

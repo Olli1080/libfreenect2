@@ -59,7 +59,7 @@ libfreenect2::Freenect2Device *devtopause;
 //waitForNewFrame().
 void sigusr1_handler(int s)
 {
-  if (devtopause == 0)
+  if (devtopause == nullptr)
     return;
 /// [pause]
   if (protonect_paused)
@@ -70,30 +70,28 @@ void sigusr1_handler(int s)
 /// [pause]
 }
 
-//The following demostrates how to create a custom logger
+//The following demonstrates how to create a custom file logger
 /// [logger]
-#include <fstream>
 #include <cstdlib>
-class MyFileLogger: public libfreenect2::Logger
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
+std::shared_ptr<spdlog::logger> createFileLogger(const char *filename)
 {
-private:
-  std::ofstream logfile_;
-public:
-  MyFileLogger(const char *filename)
+  if (filename == nullptr)
+    return nullptr;
+  try
   {
-    if (filename)
-      logfile_.open(filename);
-    level_ = Debug;
+    auto logger = spdlog::basic_logger_mt("freenect2_file", filename);
+    logger->set_level(spdlog::level::debug);
+    logger->set_pattern("[%l] %v");
+    logger->flush_on(spdlog::level::debug);
+    return logger;
   }
-  bool good()
+  catch (const spdlog::spdlog_ex &)
   {
-    return logfile_.is_open() && logfile_.good();
+    return nullptr;
   }
-  virtual void log(Level level, const std::string &message)
-  {
-    logfile_ << "[" << libfreenect2::Logger::level2str(level) << "] " << message << std::endl;
-  }
-};
+}
 /// [logger]
 
 /// [main]
@@ -128,25 +126,23 @@ int main(int argc, char *argv[])
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
   // avoid flooing the very slow Windows console with debug messages
-  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Info));
+  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(spdlog::level::info));
 #else
   // create a console logger with debug level (default is console logger with info level)
 /// [logging]
-  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Debug));
+  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(spdlog::level::debug));
 /// [logging]
 #endif
 /// [file logging]
-  MyFileLogger *filelogger = new MyFileLogger(getenv("LOGFILE"));
-  if (filelogger->good())
+  auto filelogger = createFileLogger(getenv("LOGFILE"));
+  if (filelogger != nullptr)
     libfreenect2::setGlobalLogger(filelogger);
-  else
-    delete filelogger;
 /// [file logging]
 
 /// [context]
   libfreenect2::Freenect2 freenect2;
-  libfreenect2::Freenect2Device *dev = 0;
-  libfreenect2::PacketPipeline *pipeline = 0;
+  libfreenect2::Freenect2Device *dev = nullptr;
+  libfreenect2::PacketPipeline *pipeline = nullptr;
 /// [context]
 
   std::string serial = "";
@@ -246,7 +242,7 @@ int main(int argc, char *argv[])
     else if(arg == "-frames")
     {
       ++argI;
-      framemax = strtol(argv[argI], NULL, 0);
+      framemax = strtol(argv[argI], nullptr, 0);
       if (framemax == 0) {
         std::cerr << "invalid frame count '" << argv[argI] << "'" << std::endl;
         return -1;
@@ -288,7 +284,7 @@ int main(int argc, char *argv[])
     dev = freenect2.openDevice(serial);
   }
 
-  if(dev == 0)
+  if(dev == nullptr)
   {
     std::cout << "failure opening device!" << std::endl;
     return -1;

@@ -29,6 +29,8 @@
 #ifndef ASYNC_PACKET_PROCESSOR_H_
 #define ASYNC_PACKET_PROCESSOR_H_
 
+#include <string>
+
 #include <libfreenect2/threading.h>
 #include <libfreenect2/packet_processor.h>
 
@@ -57,7 +59,7 @@ public:
   {
   }
 
-  virtual ~AsyncPacketProcessor()
+  ~AsyncPacketProcessor() noexcept override
   {
     shutdown_ = true;
     packet_condition_.notify_one();
@@ -65,7 +67,7 @@ public:
     thread_.join();
   }
 
-  virtual bool ready()
+  bool ready() const override
   {
     // try to aquire lock, if we succeed the background thread is waiting on packet_condition_
     bool locked = packet_mutex_.try_lock();
@@ -78,27 +80,27 @@ public:
     return locked;
   }
 
-  virtual bool good()
+  bool good() const override
   {
     return processor_->good();
   }
 
-  virtual void process(const PacketT &packet)
+  void process(const PacketT &packet) override
   {
     {
-      libfreenect2::lock_guard l(packet_mutex_);
+      std::lock_guard l(packet_mutex_);
       current_packet_ = packet;
       current_packet_available_ = true;
     }
     packet_condition_.notify_one();
   }
 
-  virtual void allocateBuffer(PacketT &p, size_t size)
+  void allocateBuffer(PacketT &p, size_t size) override
   {
     processor_->allocateBuffer(p, size);
   }
 
-  virtual void releaseBuffer(PacketT &p)
+  void releaseBuffer(PacketT &p) override
   {
     processor_->releaseBuffer(p);
   }
@@ -109,9 +111,9 @@ private:
   PacketT current_packet_;        ///< Packet being processed.
 
   bool shutdown_;
-  libfreenect2::mutex packet_mutex_; ///< Mutex indicating a new packet can be stored in #current_packet_.
-  libfreenect2::condition_variable packet_condition_; ///< Mutex indicating processing is blocked on lack of packets.
-  libfreenect2::thread thread_; ///< Asynchronous thread.
+  mutable std::mutex packet_mutex_; ///< Mutex indicating a new packet can be stored in #current_packet_.
+  std::condition_variable packet_condition_; ///< Mutex indicating processing is blocked on lack of packets.
+  std::thread thread_; ///< Asynchronous thread.
 
   /**
    * Wrapper function to start the thread.
@@ -125,8 +127,9 @@ private:
   /** Asynchronously process a provided packet. */
   void execute()
   {
-    this_thread::set_name(processor_->name());
-    libfreenect2::unique_lock l(packet_mutex_);
+    std::string name(processor_->name());
+    this_thread::set_name(name.c_str());
+    std::unique_lock l(packet_mutex_);
 
     while(!shutdown_)
     {

@@ -29,6 +29,7 @@
 #include <libfreenect2/resource.h>
 #include <libfreenect2/logging.h>
 #include <string>
+#include <string_view>
 #include <cstring>
 
 namespace libfreenect2
@@ -45,7 +46,7 @@ struct ResourceDescriptor
 #ifdef RESOURCES_INC
 #include "resources.inc.h"
 #else
-static ResourceDescriptor resource_descriptors[] = {{NULL, NULL, 0}};
+static ResourceDescriptor resource_descriptors[] = {{nullptr, nullptr, 0}};
 static int resource_descriptors_length = 0;
 #endif
 
@@ -56,13 +57,13 @@ static int resource_descriptors_length = 0;
  * @param [out] Length of the resource data, if found.
  * @return Whether the resource could be retrieved.
  */
-bool loadResource(const std::string &name, unsigned char const**data, size_t *length)
+bool loadResource(std::string_view name, unsigned char const**data, size_t *length)
 {
   bool result = false;
 
   for(int i = 0; i < resource_descriptors_length; ++i)
   {
-    if(name.compare(resource_descriptors[i].filename) == 0)
+    if(name == resource_descriptors[i].filename)
     {
       *data = resource_descriptors[i].data;
       *length = resource_descriptors[i].length;
@@ -80,20 +81,20 @@ bool loadResource(const std::string &name, unsigned char const**data, size_t *le
  * @param n Size of the supplied buffer.
  * @return Whether the requested resource could be loaded (copied) into the supplied buffer.
  */
-bool loadBufferFromResources(const std::string &filename, unsigned char *buffer, const size_t n)
+bool loadBufferFromResources(std::string_view filename, unsigned char *buffer, const size_t n)
 {
   size_t length = 0;
-  const unsigned char *data = NULL;
+  const unsigned char *data = nullptr;
 
   if(!loadResource(filename, &data, &length))
   {
-    LOG_ERROR << "failed to load resource: " << filename;
+        LOG_ERROR("failed to load resource: {}", filename);
     return false;
   }
 
   if(length != n)
   {
-    LOG_ERROR << "wrong size of resource: " << filename;
+        LOG_ERROR("wrong size of resource: {}", filename);
     return false;
   }
 

@@ -29,6 +29,8 @@
 
 #include <libfreenect2/threading.h>
 
+#include <memory>
+
 namespace libfreenect2
 {
 namespace usb
@@ -38,14 +40,14 @@ class EventLoop
 {
 public:
   EventLoop();
-  virtual ~EventLoop();
+  virtual ~EventLoop() noexcept;
 
   void start(void *usb_context);
 
   void stop();
 private:
   bool shutdown_;
-  libfreenect2::thread *thread_;
+  std::unique_ptr<std::thread> thread_;
   void *usb_context_;
 
   static void static_execute(void *cookie);

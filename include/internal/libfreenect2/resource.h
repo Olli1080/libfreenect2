@@ -30,12 +30,13 @@
 #define RESOURCE_H_
 
 #include <string>
+#include <string_view>
 
 namespace libfreenect2
 {
 
-bool loadResource(const std::string &name, unsigned char const**data, size_t *length);
-bool loadBufferFromResources(const std::string &filename, unsigned char *buffer, const size_t n);
+bool loadResource(std::string_view name, unsigned char const**data, size_t *length);
+bool loadBufferFromResources(std::string_view filename, unsigned char *buffer, const size_t n);
 
 } /* namespace libfreenect2 */
 #endif /* RESOURCE_H_ */

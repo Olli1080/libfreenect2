@@ -24,76 +24,61 @@
  * either License.
  */
 
-/** @file logger.h Declaration of logging classes. */
+/** @file logger.h Logging utilities built on spdlog. */
 
 #ifndef LIBFREENECT2_LOGGER_H_
 #define LIBFREENECT2_LOGGER_H_
 
-#include <string>
+#include <memory>
 
-#include <libfreenect2/config.h>
+#include <spdlog/spdlog.h>
+
+#include <freenect2_logging/export.h>
 
 namespace libfreenect2
 {
 
 /** @defgroup logging Logging utilities
- * Specify logging level and custom logging destination. */
+ * %libfreenect2 logs through its own dedicated spdlog logger instance
+ * (never the spdlog default logger). Install your own logger (console, file,
+ * rotating, network sink, ...) with setGlobalLogger(), or adjust the level of
+ * the library's own instance with getLogLevel()/setLogLevel(). */
 ///@{
 
-/** Provide interfaces to receive log messages.
- * You can inherit this class and implement your custom logger. */
-class LIBFREENECT2_API Logger
-{
-public:
-  /** Available levels of logging, higher is more output. */
-  enum Level
-  {
-    None = 0,
-    Error = 1,
-    Warning = 2,
-    Info = 3,
-    Debug = 4,
-  };
-
-  /** Default is Info, or overridden by environment variable `LIBFREENECT2_LOGGER_LEVEL`.
-   * `LIBFREENECT2_LOGGER_LEVEL` can contain a case-insensitive name of level.
-   */
-  static Level getDefaultLevel();
-
-  /** Convert logging level to a human-readable name.
-   */
-  static std::string level2str(Level level);
-
-  virtual ~Logger();
-
-  /** Get the level of the logger; the level is immutable. */
-  virtual Level level() const;
-
-  /** libfreenect2 calls this function to output all log messages. */
-  virtual void log(Level level, const std::string &message) = 0;
-protected:
-  Level level_;
-};
-
-/** Allocate a Logger instance that outputs log to standard input/output  */
-LIBFREENECT2_API Logger *createConsoleLogger(Logger::Level level);
-
-/** @copybrief Logger::getDefaultLevel
- *
- * %libfreenect2 will have an initial global logger created with createConsoleLoggerWithDefaultLevel().
- * You do not have to explicitly call this if the default is already what you want.
+/** Get the default log level.
+ * Default is `spdlog::level::info`, or overridden by environment variable
+ * `LIBFREENECT2_LOGGER_LEVEL`. `LIBFREENECT2_LOGGER_LEVEL` can contain a
+ * case-insensitive level name: `none`, `error`, `warning`, `info`, `debug`.
  */
-LIBFREENECT2_API Logger *createConsoleLoggerWithDefaultLevel();
+FREENECT2_LOGGING_EXPORT spdlog::level::level_enum getDefaultLevel();
+
+/** Create a console (stderr) spdlog logger that logs at the given level. */
+FREENECT2_LOGGING_EXPORT std::shared_ptr<spdlog::logger> createConsoleLogger(spdlog::level::level_enum level);
+
+/** Create a console logger using the default level (see getDefaultLevel()). */
+FREENECT2_LOGGING_EXPORT std::shared_ptr<spdlog::logger> createDefaultLogger();
 
 /** Get the pointer to the current logger.
- * @return Pointer to the logger. This is purely informational. You should not free the pointer.
+ * @return The current global logger. Never null; a default console logger
+ * is always available.
  */
-LIBFREENECT2_API Logger *getGlobalLogger();
+FREENECT2_LOGGING_EXPORT std::shared_ptr<spdlog::logger> getGlobalLogger();
 
 /** Set the logger for all log output in this library.
- * @param logger Pointer to your logger, or `NULL` to disable logging. The memory will be freed automatically. You should not free the pointer.
+ * @param logger Your logger, or null to restore the default console logger.
  */
-LIBFREENECT2_API void setGlobalLogger(Logger *logger);
+FREENECT2_LOGGING_EXPORT void setGlobalLogger(std::shared_ptr<spdlog::logger> logger);
+
+/** Get the log level of the library's own logger instance.
+ * This never affects spdlog's default logger or any other application loggers.
+ */
+FREENECT2_LOGGING_EXPORT spdlog::level::level_enum getLogLevel();
+
+/** Set the log level of the library's own logger instance.
+ * Use `spdlog::level::off` to disable all logging from this library.
+ * This never affects spdlog's default logger or any other application loggers.
+ */
+FREENECT2_LOGGING_EXPORT void setLogLevel(spdlog::level::level_enum level);
 
 ///@}
 } /* namespace libfreenect2 */

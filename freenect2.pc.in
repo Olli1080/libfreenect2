@@ -6,6 +6,6 @@ includedir=${prefix}/include
 Name: freenect2 
 Description: Driver for the Kinect v2 (aka K4W) 
 Version: @PROJECT_VER@
-Libs: -L${libdir} -lfreenect2
+Libs: -L${libdir} -lfreenect2 -lfreenect2_logging
 Cflags: -I${includedir}
 

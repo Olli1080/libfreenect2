@@ -45,7 +45,7 @@ namespace Freenect2Driver
 OniStatus VideoStream::setVideoMode(OniVideoMode requested_mode)
 {
   VideoModeMap supported_video_modes = getSupportedVideoModes();
-  VideoModeMap::const_iterator matched_mode_iter = supported_video_modes.find(requested_mode);
+  auto matched_mode_iter = supported_video_modes.find(requested_mode);
   if (matched_mode_iter == supported_video_modes.end())
     return ONI_STATUS_NOT_SUPPORTED;
 

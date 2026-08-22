@@ -51,8 +51,8 @@ void EventLoop::static_execute(void *cookie)
 
 EventLoop::EventLoop() :
     shutdown_(false),
-    thread_(0),
-    usb_context_(0)
+    thread_(nullptr),
+    usb_context_(nullptr)
 {
 }
 
@@ -67,24 +67,23 @@ EventLoop::~EventLoop()
  */
 void EventLoop::start(void *usb_context)
 {
-  if(thread_ == 0)
+  if(thread_ == nullptr)
   {
     shutdown_ = false;
     usb_context_ = usb_context;
-    thread_ = new libfreenect2::thread(&EventLoop::static_execute, this);
+    thread_ = std::make_unique<std::thread>(&EventLoop::static_execute, this);
   }
 }
 
 /** Stop the thread. */
 void EventLoop::stop()
 {
-  if(thread_ != 0)
+  if(thread_ != nullptr)
   {
     shutdown_ = true;
     thread_->join();
-    delete thread_;
-    thread_ = 0;
-    usb_context_ = 0;
+    thread_.reset();
+    usb_context_ = nullptr;
   }
 }
 
@@ -98,7 +97,7 @@ void EventLoop::execute()
 
   while(!shutdown_)
   {
-    libusb_handle_events_timeout_completed(reinterpret_cast<libusb_context *>(usb_context_), &t, 0);
+    libusb_handle_events_timeout_completed(reinterpret_cast<libusb_context *>(usb_context_), &t, nullptr);
   }
 }
 

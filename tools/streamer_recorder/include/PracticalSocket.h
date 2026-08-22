@@ -22,11 +22,12 @@
 #ifndef __PRACTICALSOCKET_INCLUDED__
 #define __PRACTICALSOCKET_INCLUDED__
 
-#include <exception>         // For exception class
-#include <string>            // For string
-#include <cstdlib>           // For invocation to atoi.
+#include <exception>
+#include <string>
+#include <cstdlib>
 
-using namespace std;
+using std::exception;
+using std::string;
 
 /**
  *   Signals a problem with the execution of a socket call.
