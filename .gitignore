@@ -1,6 +1,9 @@
 build
 .audio/
 
+# Downloaded/exported YOLOv8 .pt/.onnx weights (see examples/CMakeLists.txt DOWNLOAD_ONNX_MODELS)
+examples/models/
+
 # Dependency folders
 depends/*/
 depends/*.deb

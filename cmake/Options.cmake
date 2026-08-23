@@ -8,6 +8,7 @@ option(BUILD_OPENNI2_DRIVER "Build OpenNI2 driver plugin" ON)
 option(BUILD_STREAMER_RECORDER "Build network streaming tool" OFF)
 option(BUILD_PCL_EXAMPLE "Build PCL point cloud visualization example" OFF)
 option(BUILD_ONNX_EXAMPLES "Build ONNX Runtime object-detection/pose examples" OFF)
+option(DOWNLOAD_ONNX_MODELS "Auto-download official Ultralytics YOLOv8n .pt weights and export them to ONNX via a local Python venv (requires Python 3; installs PyTorch into that venv, ~2GB)" OFF)
 option(ENABLE_PROFILING "Collect profiling stats (memory consuming)" OFF)
 
 # --- Backend Options ---
