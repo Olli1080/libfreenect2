@@ -149,6 +149,15 @@ if(LIBFREENECT2_WITH_VAAPI_SUPPORT)
   target_link_libraries(freenect2 PRIVATE freenect2_vaapi)
 endif()
 
+# --- Audio Backend (Kinect v2 mic array capture) ---
+# Deliberately NOT linked into core freenect2 (target_link_libraries below is
+# absent on purpose) — freenect2 stays video/depth-only per its documented
+# scope. Applications that want audio link freenect2_audio directly.
+if(ENABLE_AUDIO)
+  add_subdirectory(audio)
+  set(LIBFREENECT2_WITH_AUDIO_SUPPORT 1 CACHE INTERNAL "Audio supported")
+endif()
+
 # --- Static Build Suffix (MSVC) ---
 if(MSVC AND NOT BUILD_SHARED_LIBS)
   set_target_properties(freenect2 PROPERTIES SUFFIX "static.lib")

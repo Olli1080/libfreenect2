@@ -52,6 +52,8 @@
 
 #cmakedefine LIBFREENECT2_WITH_TURBOJPEG_SUPPORT
 
+#cmakedefine LIBFREENECT2_WITH_AUDIO_SUPPORT
+
 #define LIBFREENECT2_WITH_CXX17_SUPPORT 1
 
 /* Backward compatibility alias — C++17 implies C++11 */

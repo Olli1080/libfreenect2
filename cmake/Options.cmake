@@ -14,6 +14,7 @@ option(ENABLE_OPENCL "Enable OpenCL depth processing" ON)
 option(ENABLE_CUDA "Enable CUDA depth processing" ON)
 option(ENABLE_OPENGL "Enable OpenGL depth processing + viewer" ON)
 option(ENABLE_VAAPI "Enable Intel VA-API JPEG decode (Linux, deprecated)" OFF)
+option(ENABLE_AUDIO "Enable Kinect v2 microphone array capture" ON)
 
 # --- vcpkg Feature Mapping ---
 if(ENABLE_OPENCL)

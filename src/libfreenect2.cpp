@@ -50,6 +50,7 @@
 #include <libfreenect2/protocol/command_transaction.h>
 #include <libfreenect2/logging.h>
 #include <libfreenect2/threading.h>
+#include <libfreenect2/device_reset_coordination.h>
 
 namespace libfreenect2
 {
@@ -302,6 +303,8 @@ public:
   bool startStreams(bool rgb, bool depth) override;
   bool stop() override;
   bool close() override;
+  void *getUsbContext() override;
+  void *getUsbDeviceHandle() override;
 };
 
 class Freenect2ReplayDevice : public Freenect2Device
@@ -337,6 +340,8 @@ public:
   bool startStreams(bool rgb, bool depth) override;
   bool stop() override;
   bool close() override;
+  void *getUsbContext() override { return nullptr; } // no real USB device backs a replay device
+  void *getUsbDeviceHandle() override { return nullptr; }
 
   // X, Z, LUT tables are generated in setIrCameraParams().
   void loadP0Tables(unsigned char* buffer, size_t buffer_length);
@@ -391,6 +396,8 @@ public:
   DeviceVector devices_;
 
   bool initialized;
+
+  libusb_context *getUsbContext() const { return usb_context_.get(); }
 
   Freenect2Impl(void *usb_context) :
     managed_usb_context_(usb_context == nullptr),
@@ -513,68 +520,63 @@ public:
     if (!initialized)
       return;
 
-        LOG_INFO("enumerating devices...");
+    LOG_INFO("enumerating devices...");
     libusb_device **device_list;
     int num_devices = libusb_get_device_list(usb_context_.get(), &device_list);
 
-        LOG_INFO("{} usb devices connected", num_devices);
+    LOG_INFO("{} usb devices connected", num_devices);
 
-    if(num_devices > 0)
+    for(int idx = 0; idx < num_devices; ++idx)
     {
-      for(int idx = 0; idx < num_devices; ++idx)
+      libusb_device *dev = device_list[idx];
+      libusb_device_descriptor dev_desc;
+
+      int r = libusb_get_device_descriptor(dev, &dev_desc); // this is always successful
+
+      if(dev_desc.idVendor == Freenect2Device::VendorId && (dev_desc.idProduct == Freenect2Device::ProductId || dev_desc.idProduct == Freenect2Device::ProductIdPreview))
       {
-        libusb_device *dev = device_list[idx];
-        libusb_device_descriptor dev_desc;
+        Freenect2DeviceImpl *freenect2_dev;
 
-        int r = libusb_get_device_descriptor(dev, &dev_desc); // this is always successful
-
-        if(dev_desc.idVendor == Freenect2Device::VendorId && (dev_desc.idProduct == Freenect2Device::ProductId || dev_desc.idProduct == Freenect2Device::ProductIdPreview))
+        // prevent error if device is already open
+        if(tryGetDevice(dev, &freenect2_dev))
         {
-          Freenect2DeviceImpl *freenect2_dev;
+          UsbDeviceWithSerial dev_with_serial;
+          dev_with_serial.dev.reset(dev);
+          dev_with_serial.serial = freenect2_dev->getSerialNumber();
 
-          // prevent error if device is already open
-          if(tryGetDevice(dev, &freenect2_dev))
+          enumerated_devices_.emplace_back(std::move(dev_with_serial));
+          continue;
+        }
+
+        libusb_device_handle *dev_handle;
+        r = libusb_open(dev, &dev_handle);
+
+        if(r == LIBUSB_SUCCESS)
+        {
+          unsigned char buffer[1024];
+          r = libusb_get_string_descriptor_ascii(dev_handle, dev_desc.iSerialNumber, buffer, sizeof(buffer));
+          // keep the ref until determined not kinect
+          std::unique_ptr<libusb_device, LibusbDeviceDeleter> dev_ref(dev);
+          libusb_close(dev_handle);
+
+          if(r > LIBUSB_SUCCESS)
           {
-            UsbDeviceWithSerial dev_with_serial;
-            dev_with_serial.dev.reset(dev);
-            dev_with_serial.serial = freenect2_dev->getSerialNumber();
-
-            enumerated_devices_.push_back(std::move(dev_with_serial));
-            continue;
-          }
-
-          libusb_device_handle *dev_handle;
-          r = libusb_open(dev, &dev_handle);
-
-          if(r == LIBUSB_SUCCESS)
-          {
-            unsigned char buffer[1024];
-            r = libusb_get_string_descriptor_ascii(dev_handle, dev_desc.iSerialNumber, buffer, sizeof(buffer));
-            // keep the ref until determined not kinect
-            std::unique_ptr<libusb_device, LibusbDeviceDeleter> dev_ref(dev);
-            libusb_close(dev_handle);
-
-            if(r > LIBUSB_SUCCESS)
-            {
               UsbDeviceWithSerial dev_with_serial;
               dev_with_serial.dev = std::move(dev_ref);
               dev_with_serial.serial = std::string(reinterpret_cast<char *>(buffer), size_t(r));
-
-                            LOG_INFO("found valid Kinect v2 {} with serial {}", printBusAndDevice(dev), dev_with_serial.serial);
-              // valid Kinect v2
-              enumerated_devices_.push_back(std::move(dev_with_serial));
-            }
-            else
-            {
-                            LOG_ERROR("failed to get serial number of Kinect v2: {}", printBusAndDevice(dev, r));
-            }
-            continue;
+              LOG_INFO("found valid Kinect v2 {} with serial {}", printBusAndDevice(dev), dev_with_serial.serial);
+            // valid Kinect v2
+            enumerated_devices_.push_back(std::move(dev_with_serial));
           }
-
-                    LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev, r));
+          else
+          {
+                          LOG_ERROR("failed to get serial number of Kinect v2: {}", printBusAndDevice(dev, r));
+          }
+          continue;
         }
-        libusb_unref_device(dev);
+                  LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev, r));
       }
+      libusb_unref_device(dev);
     }
 
     libusb_free_device_list(device_list, 0);
@@ -1086,6 +1088,16 @@ bool Freenect2DeviceImpl::close()
   return true;
 }
 
+void *Freenect2DeviceImpl::getUsbContext()
+{
+  return context_->getUsbContext();
+}
+
+void *Freenect2DeviceImpl::getUsbDeviceHandle()
+{
+  return usb_device_handle_.get();
+}
+
 std::unique_ptr<const PacketPipeline> createPacketPipelineByName(std::string_view name)
 {
 #if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
@@ -1213,7 +1225,23 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const Packet
 
   if(attempting_reset)
   {
-    r = libusb_reset_device(dev_handle_ptr.get());
+    // A libusb_reset_device() call is a real USB port-level reset, affecting
+    // the whole composite device -- if freenect2_audio has already opened
+    // and claimed the mic array's interfaces in this process, resetting
+    // again here would break that session (see device_reset_coordination.h
+    // for the full story). claimDeviceResetResponsibility() ensures only
+    // one of core/audio actually performs the reset per process; if audio
+    // got there first, we skip our own reset and proceed straight to
+    // opening, since the device has already been reset for us.
+    if(claimDeviceResetResponsibility())
+    {
+      r = libusb_reset_device(dev_handle_ptr.get());
+      deviceResetComplete();
+    }
+    else
+    {
+      r = LIBUSB_SUCCESS;
+    }
 
     if(r == LIBUSB_ERROR_NOT_FOUND)
     {

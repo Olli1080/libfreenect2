@@ -1,4 +1,5 @@
 build
+.audio/
 
 # Dependency folders
 depends/*/

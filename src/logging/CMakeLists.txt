@@ -6,6 +6,10 @@
 #    STATIC and carries no export decoration, so a Frame compiled there would
 #    never reach freenect2.dll's export table, breaking external consumers
 #    like Protonect that construct Frame objects directly)
+#  - Device reset coordination (process-wide state: which of core freenect2
+#    or freenect2_audio performs the Kinect's one-time device-wide USB
+#    reset, since only one of them should -- see
+#    device_reset_coordination.h)
 #
 # Always a real SHARED library, regardless of BUILD_SHARED_LIBS: a static
 # library would give every consuming DLL its own private copy of the logger,
@@ -20,10 +24,12 @@ target_sources(freenect2_logging
   PRIVATE
     ${PROJECT_SOURCE_DIR}/src/logging.cpp
     ${PROJECT_SOURCE_DIR}/src/frame.cpp
+    ${PROJECT_SOURCE_DIR}/src/device_reset_coordination.cpp
   PRIVATE
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/logger.h
     ${PROJECT_SOURCE_DIR}/include/internal/libfreenect2/logging.h
     ${PROJECT_SOURCE_DIR}/include/internal/libfreenect2/perf_logging.h
+    ${PROJECT_SOURCE_DIR}/include/internal/libfreenect2/device_reset_coordination.h
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/frame_listener.hpp
 )
 

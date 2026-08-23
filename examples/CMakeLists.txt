@@ -51,6 +51,22 @@ endif()
 include(GNUInstallDirs)
 install(TARGETS Protonect DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+# --- Audio Capture Example ---
+if(TARGET freenect2_audio)
+  add_executable(AudioCapture AudioCapture.cpp)
+  target_compile_features(AudioCapture PRIVATE cxx_std_17)
+  target_link_libraries(AudioCapture PRIVATE freenect2_audio)
+
+  install(TARGETS AudioCapture DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+  # --- Audio/Video Correlation Example ---
+  add_executable(AudioVideoSync AudioVideoSync.cpp)
+  target_compile_features(AudioVideoSync PRIVATE cxx_std_17)
+  target_link_libraries(AudioVideoSync PRIVATE freenect2 freenect2_audio)
+
+  install(TARGETS AudioVideoSync DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
 # --- PCL Point Cloud Example ---
 if(BUILD_PCL_EXAMPLE)
   find_package(PCL REQUIRED COMPONENTS common visualization)

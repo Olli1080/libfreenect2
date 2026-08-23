@@ -103,6 +103,13 @@ if(BUILD_STREAMER_RECORDER)
   set(HAVE_streamer_recorder yes)
 endif()
 
+set(HAVE_Audio disabled)
+if(LIBFREENECT2_WITH_AUDIO_SUPPORT)
+  set(HAVE_Audio yes)
+else()
+  set(HAVE_Audio no)
+endif()
+
 # --- Config header ---
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/include/libfreenect2/config.h.in"
@@ -232,3 +239,4 @@ message(STATUS "  VAAPI:         ${HAVE_VAAPI}")
 message(STATUS "  OpenNI2:       ${HAVE_OpenNI2}")
 message(STATUS "  Examples:      ${HAVE_Examples}")
 message(STATUS "  Streamer:      ${HAVE_streamer_recorder}")
+message(STATUS "  Audio:         ${HAVE_Audio}")

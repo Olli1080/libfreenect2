@@ -227,6 +227,22 @@ public:
    * @return true if ok, false if error.
    */
   [[nodiscard]] virtual bool close() = 0;
+
+  /** For use by companion libraries that need to share this device's
+   * already-open USB session rather than opening their own (e.g.
+   * freenect2_audio's AudioCapture(Freenect2Device*) constructor) --
+   * on Windows with the UsbDk backend, only one open session per physical
+   * device is permitted at all, so a second independent libusb_open() to
+   * the same device fails outright. Returned as an opaque pointer so this
+   * header does not need to depend on libusb.h; callers that need it cast
+   * back to libusb_context*. Returns nullptr for a replay device (no real
+   * USB device backs it). Not part of the stable application-facing API.
+   */
+  virtual void *getUsbContext() = 0;
+
+  /** @see getUsbContext(). Opaque libusb_device_handle*; nullptr for a
+   * replay device. */
+  virtual void *getUsbDeviceHandle() = 0;
 };
 
 class Freenect2Impl;
