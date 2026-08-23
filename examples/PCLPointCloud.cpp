@@ -12,6 +12,7 @@
 
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
+#include <libfreenect2/packet_pipeline.h>
 #include <libfreenect2/registration.h>
 
 #include <pcl/point_cloud.h>
@@ -59,8 +60,46 @@ static PointCloud::Ptr frame_to_cloud(const libfreenect2::Frame& undistorted,
 	return cloud;
 }
 
-int main()
+int main(int argc, char** argv)
 {
+	libfreenect2::PacketPipeline* pipeline = nullptr;
+	if (argc > 1)
+	{
+		std::string arg(argv[1]);
+		if (arg == "cl")
+		{
+#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
+			pipeline = new libfreenect2::OpenCLPacketPipeline();
+#else
+			std::cerr << "OpenCL pipeline is not supported!\n";
+#endif
+		}
+		else if (arg == "vk" || arg == "vulkan")
+		{
+#ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
+			pipeline = new libfreenect2::VulkanPacketPipeline();
+#else
+			std::cerr << "Vulkan pipeline is not supported!\n";
+#endif
+		}
+		else if (arg == "gl")
+		{
+#ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
+			pipeline = new libfreenect2::OpenGLPacketPipeline();
+#else
+			std::cerr << "OpenGL pipeline is not supported!\n";
+#endif
+		}
+		else if (arg == "cpu")
+		{
+			pipeline = new libfreenect2::CpuPacketPipeline();
+		}
+		else
+		{
+			std::cerr << "Unknown pipeline argument: " << arg << " (expected cl | gl | vk | cpu)\n";
+		}
+	}
+
 	libfreenect2::Freenect2 freenect2;
 
 	if (freenect2.enumerateDevices() == 0)
@@ -70,7 +109,9 @@ int main()
 	}
 
 	std::string serial = freenect2.getDefaultDeviceSerialNumber();
-	libfreenect2::Freenect2Device* device = freenect2.openDevice(serial);
+	libfreenect2::Freenect2Device* device = pipeline
+		? freenect2.openDevice(serial, pipeline)
+		: freenect2.openDevice(serial);
 	if (!device)
 	{
 		std::cerr << "Failed to open device with serial " << serial << ".\n";
