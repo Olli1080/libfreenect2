@@ -12,6 +12,7 @@
  * the beamforming estimate.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -36,6 +37,53 @@ namespace
 // confident, so a quiet/diffuse-noise room doesn't highlight everything.
 const float kHighlightToleranceDeg = 10.0f;
 const float kHighlightConfidenceThreshold = 0.15f;
+
+// DoaEstimate::azimuth_degrees is measured relative to the MIC ARRAY's own
+// center (see audio_doa.hpp), but point-cloud coordinates here are in the
+// DEPTH/COLOR CAMERA's own frame -- these are two different physical
+// origins on the same device (confirmed by Yamasaki et al., "Development
+// of a Simplified Acoustic Visualization System Using Kinect Sensors",
+// CONVR2016, whose whole contribution is correcting for exactly this).
+// Their correction equations (their eq. 1/2) contain two additive offset
+// terms of 95mm and 13mm between the array and camera centers. We only
+// have OCR'd text of their figure, not the original diagram, so the exact
+// axis/sign pairing isn't independently verifiable the way the CHiME-6
+// mic-spacing numbers were (that fix was confirmed live against a real
+// clap; this one is a few-degree effect too subtle to casually eyeball) --
+// best-effort reading below: 95mm along the array axis (same direction as
+// CH1/the camera lens, given both sit on the same side of the device per
+// the CHiME-6 photo), 13mm along the forward/depth axis. If this ever
+// looks like it's making highlighting *less* accurate rather than more,
+// try flipping kArrayToCameraOffsetX/Z's signs first.
+const float kArrayToCameraOffsetX = -0.095f; // meters, array center's x in camera frame
+const float kArrayToCameraOffsetZ = -0.013f; // meters, array center's z in camera frame
+
+// Maps confidence (0..1) to a traffic-light color scale: red (unreliable)
+// -> yellow -> green (reliable), always at full brightness. Deliberately
+// NOT opacity/brightness-based -- PCL's shape opacity rendering doesn't
+// reliably convey this, and human brightness perception isn't linear
+// anyway, so a low value read as "still pretty visible" instead of
+// "clearly faded." Distinct hues are much easier to read at a glance.
+void confidenceToColor(float confidence, double &r, double &g, double &b)
+{
+  confidence = std::clamp(confidence, 0.0f, 1.0f);
+  if (confidence < 0.5f)
+  {
+    // red -> yellow
+    float t = confidence / 0.5f;
+    r = 1.0;
+    g = t;
+    b = 0.0;
+  }
+  else
+  {
+    // yellow -> green
+    float t = (confidence - 0.5f) / 0.5f;
+    r = 1.0 - t;
+    g = 1.0;
+    b = 0.0;
+  }
+}
 
 class DoaFeeder : public libfreenect2::AudioFrameListener
 {
@@ -92,19 +140,25 @@ PointCloud::Ptr frame_to_cloud(const libfreenect2::Frame &undistorted,
 
       if (do_highlight)
       {
-        // Camera-space azimuth: 0 = straight ahead (+z), matching
-        // DoaEstimate::azimuth_degrees's convention exactly (see
-        // audio_doa.hpp) -- no conversion needed here.
-        float azimuth = std::atan2(x, z);
+        // Azimuth as seen from the MIC ARRAY's own center, not the
+        // camera's -- shift into array-relative coordinates first (see
+        // the offset constants above) so this matches
+        // DoaEstimate::azimuth_degrees's actual reference point. 0 =
+        // straight ahead from the array.
+        float azimuth = std::atan2(x - kArrayToCameraOffsetX, z - kArrayToCameraOffsetZ);
         float diff = std::fabs(azimuth - highlight_rad);
         if (diff < kHighlightToleranceDeg * static_cast<float>(M_PI) / 180.0f)
         {
-          // Tint toward yellow, scaled by how close to dead-center the
-          // point is within the tolerance cone.
-          float strength = 1.0f - diff / (kHighlightToleranceDeg * static_cast<float>(M_PI) / 180.0f);
-          point.r = static_cast<uint8_t>(std::min(255.0f, point.r + strength * (255 - point.r)));
-          point.g = static_cast<uint8_t>(std::min(255.0f, point.g + strength * (255 - point.g)));
-          point.b = static_cast<uint8_t>(point.b * (1.0f - strength));
+          // Tint toward a confidence-colored (red/yellow/green) hue,
+          // scaled by how close to dead-center the point is within the
+          // tolerance cone -- see confidenceToColor() for why hue, not
+          // brightness/fading, carries the confidence signal.
+          double cr, cg, cb;
+          confidenceToColor(highlight.confidence, cr, cg, cb);
+          float angular_strength = 1.0f - diff / (kHighlightToleranceDeg * static_cast<float>(M_PI) / 180.0f);
+          point.r = static_cast<uint8_t>(std::min(255.0f, point.r + angular_strength * (255.0f * static_cast<float>(cr) - point.r)));
+          point.g = static_cast<uint8_t>(std::min(255.0f, point.g + angular_strength * (255.0f * static_cast<float>(cg) - point.g)));
+          point.b = static_cast<uint8_t>(std::min(255.0f, point.b + angular_strength * (255.0f * static_cast<float>(cb) - point.b)));
         }
       }
     }
@@ -113,11 +167,15 @@ PointCloud::Ptr frame_to_cloud(const libfreenect2::Frame &undistorted,
   return cloud;
 }
 
-// Adds/replaces a named arrow shape pointing from the origin toward
-// azimuth_degrees at a fixed length, or removes it if the estimate isn't
-// valid/confident enough to show.
+// Adds/replaces a named arrow shape pointing from the camera's own origin
+// (matching the visible coordinate-axis widget -- NOT the mic array's
+// actual position, which is only a few cm off but looks like a large
+// displacement on screen this close to the viewpoint due to perspective)
+// toward azimuth_degrees at a fixed length, colored by confidence (see
+// confidenceToColor()), or removed if the estimate isn't valid/confident
+// enough to show at all.
 void updateDoaArrow(pcl::visualization::PCLVisualizer::Ptr &viewer, const std::string &id,
-                     const libfreenect2::DoaEstimate &estimate, double r, double g, double b)
+                     const libfreenect2::DoaEstimate &estimate)
 {
   viewer->removeShape(id);
   if (!estimate.valid || estimate.confidence < kHighlightConfidenceThreshold)
@@ -127,6 +185,8 @@ void updateDoaArrow(pcl::visualization::PCLVisualizer::Ptr &viewer, const std::s
   const float length = 1.0f;
   pcl::PointXYZ start(0.0f, 0.0f, 0.0f);
   pcl::PointXYZ end(length * std::sin(rad), 0.0f, length * std::cos(rad));
+  double r, g, b;
+  confidenceToColor(estimate.confidence, r, g, b);
   viewer->addArrow(end, start, r, g, b, false, id);
 }
 } // namespace
@@ -209,8 +269,12 @@ int main()
 
     if (audio_running)
     {
-      updateDoaArrow(viewer, "doa_gcc", gcc, 0.0, 1.0, 0.0);   // green = GCC-PHAT
-      updateDoaArrow(viewer, "doa_beam", beam, 0.0, 0.4, 1.0); // blue = delay-and-sum
+      // Both arrows are colored by their own confidence (red/yellow/green,
+      // see confidenceToColor()) -- distinguish gcc vs. beam by which
+      // arrow is which (labeled in the console output below), not by a
+      // fixed identity color.
+      updateDoaArrow(viewer, "doa_gcc", gcc);
+      updateDoaArrow(viewer, "doa_beam", beam);
 
       if (gcc.valid && beam.valid)
       {
