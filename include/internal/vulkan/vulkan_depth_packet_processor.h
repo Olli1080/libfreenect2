@@ -26,14 +26,14 @@
 
 /** @file vulkan_depth_packet_processor.h Depth packet processor using Vulkan.
  *
- * Phase 2 (see the "Add a Vulkan depth-processing backend" plan): all 4
+ * Phase 3 (see the "Add a Vulkan depth-processing backend" plan): all 4
  * depth-decode stages (processPixelStage1, filterPixelStage1,
  * processPixelStage2, filterPixelStage2) are ported and chained with
  * barriers in a single command buffer submission. process() produces a
  * real depth + IR Frame and notifies listener_, same as the OpenCL/CPU
- * backends. The bilateral (stage 1) and edge-aware (stage 2) filters are
- * currently always applied -- the EnableBilateralFilter/EnableEdgeAwareFilter
- * config toggles other backends respect aren't wired up yet (Phase 3).
+ * backends. EnableBilateralFilter/EnableEdgeAwareFilter are respected by
+ * conditionally skipping the corresponding dispatch, matching every other
+ * backend's config-driven behavior.
  */
 
 #ifndef VULKAN_DEPTH_PACKET_PROCESSOR_H_
@@ -69,12 +69,14 @@ public:
 
   void process(const DepthPacket &packet) override;
 
-  /** Verification hooks: intermediate output of each stage for the most
-   * recently processed packet, one entry per pixel (TABLE_SIZE). a/b/n and
-   * their filtered counterparts are interleaved xyz per pixel (matching the
-   * OpenCL kernel's float3 layout); depth/ir_sum/filtered/ir are one float
-   * per pixel; max_edge_test is one 0-or-1 value per pixel. Used to diff
-   * against OpenCL's equivalent buffers on real captured hardware data. */
+  /** Debug-only verification hooks (see enableDebugCapture()): intermediate
+   * output of each stage for the most recently processed packet, one entry
+   * per pixel (TABLE_SIZE). a/b/n and their filtered counterparts are
+   * interleaved xyz per pixel (matching the OpenCL kernel's float3
+   * layout); depth/ir_sum/filtered/ir are one float per pixel;
+   * max_edge_test is one 0-or-1 value per pixel. Used to diff against
+   * OpenCL's equivalent buffers on real captured hardware data. */
+  void enableDebugCapture(bool enable);
   const std::vector<float> &debugStage1A() const;
   const std::vector<float> &debugStage1B() const;
   const std::vector<float> &debugStage1N() const;
@@ -85,9 +87,6 @@ public:
   const std::vector<float> &debugDepth() const;
   const std::vector<float> &debugIrSum() const;
   const std::vector<float> &debugFiltered() const;
-
-protected:
-  Allocator *getAllocator() override;
 
 private:
   std::unique_ptr<VulkanDepthPacketProcessorImpl> impl_;

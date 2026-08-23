@@ -190,6 +190,7 @@ int main()
   vulkan_proc.loadP0TablesFromCommandResponse(p0_table.data(), p0_table.size());
   vulkan_proc.loadXZTables(x_table.data(), z_table.data());
   vulkan_proc.loadLookupTable(lut.data());
+  vulkan_proc.enableDebugCapture(true);
 
   if (!vulkan_proc.good())
   {

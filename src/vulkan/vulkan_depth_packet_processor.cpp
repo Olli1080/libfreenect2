@@ -110,6 +110,14 @@ struct VulkanBufferResource
 // 4 of these (one per depth-decode stage), built by createComputeStage()
 // below instead of repeating stage 1's original ~80 lines of Vulkan
 // boilerplate 4 times.
+//
+// descSetAlt is optional, used only by stage2: when EnableBilateralFilter
+// is off, stage2 must read directly from the unfiltered a/b buffers
+// instead of the bilateral filter's output. Descriptor sets are bound to
+// fixed buffers at creation time (unlike OpenCL's kernel args, which get
+// rebound on config change), so this is a second, alternately-bound
+// descriptor set sharing the same pipeline/layout rather than a mutation
+// of descSet -- built by createAltDescriptorSet() below.
 struct ComputeStage
 {
   vk::UniqueShaderModule shaderModule;
@@ -118,6 +126,8 @@ struct ComputeStage
   vk::UniquePipeline pipeline;
   vk::UniqueDescriptorPool descPool;
   vk::UniqueDescriptorSet descSet;
+  vk::UniqueDescriptorPool descPoolAlt;
+  vk::UniqueDescriptorSet descSetAlt;
 };
 
 class VulkanDepthPacketProcessorImpl
@@ -125,6 +135,7 @@ class VulkanDepthPacketProcessorImpl
 public:
   bool deviceInitialized = false;
   bool tablesLoaded = false;
+  bool debugCapture = false;
   DepthPacketProcessor::Parameters params;
   DepthPacketProcessor::Config config;
 
@@ -157,6 +168,7 @@ public:
   VulkanBufferResource createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage);
   bool createComputeStage(ComputeStage &stage, std::string_view spvResourceName,
                            const std::vector<VulkanBufferResource *> &buffers, uint32_t pushConstantBytes);
+  bool createAltDescriptorSet(ComputeStage &stage, const std::vector<VulkanBufferResource *> &buffers);
   bool initTablesAndPipeline();
   void newIrFrame();
   void newDepthFrame();
@@ -381,6 +393,46 @@ bool VulkanDepthPacketProcessorImpl::createComputeStage(ComputeStage &stage, std
   return true;
 }
 
+bool VulkanDepthPacketProcessorImpl::createAltDescriptorSet(ComputeStage &stage, const std::vector<VulkanBufferResource *> &buffers)
+{
+  uint32_t n = static_cast<uint32_t>(buffers.size());
+
+  vk::DescriptorPoolSize poolSize{};
+  poolSize.type = vk::DescriptorType::eStorageBuffer;
+  poolSize.descriptorCount = n;
+
+  vk::DescriptorPoolCreateInfo descPoolInfo{};
+  descPoolInfo.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
+  descPoolInfo.maxSets = 1;
+  descPoolInfo.poolSizeCount = 1;
+  descPoolInfo.pPoolSizes = &poolSize;
+  stage.descPoolAlt = device->createDescriptorPoolUnique(descPoolInfo);
+
+  vk::DescriptorSetAllocateInfo descAllocInfo{};
+  descAllocInfo.descriptorPool = *stage.descPoolAlt;
+  descAllocInfo.descriptorSetCount = 1;
+  descAllocInfo.pSetLayouts = &(*stage.descSetLayout);
+  stage.descSetAlt = std::move(device->allocateDescriptorSetsUnique(descAllocInfo).front());
+
+  std::vector<vk::DescriptorBufferInfo> bufferInfos(n);
+  std::vector<vk::WriteDescriptorSet> writes(n);
+  for (uint32_t i = 0; i < n; i++)
+  {
+    bufferInfos[i].buffer = *buffers[i]->buffer;
+    bufferInfos[i].offset = 0;
+    bufferInfos[i].range = buffers[i]->size;
+
+    writes[i].dstSet = *stage.descSetAlt;
+    writes[i].dstBinding = i;
+    writes[i].descriptorCount = 1;
+    writes[i].descriptorType = vk::DescriptorType::eStorageBuffer;
+    writes[i].pBufferInfo = &bufferInfos[i];
+  }
+  device->updateDescriptorSets(writes, {});
+
+  return true;
+}
+
 bool VulkanDepthPacketProcessorImpl::initTablesAndPipeline()
 {
   try
@@ -420,6 +472,12 @@ bool VulkanDepthPacketProcessorImpl::initTablesAndPipeline()
     if (!createComputeStage(stage2, "process_pixel_stage2.comp.spv",
                              {&aFilteredBuf, &bFilteredBuf, &xTableBuf, &zTableBuf, &depthBuf, &irSumBuf},
                              sizeof(float) * 9)) // ab_multiplier, individual_ab_threshold, ab_threshold, ab_confidence_slope/offset, min/max_dealias_confidence, phase_offset, unambigious_dist
+      return false;
+
+    // Alternate binding for stage2 reading the raw (unfiltered) a/b buffers
+    // directly -- used when EnableBilateralFilter is off, see the
+    // ComputeStage::descSetAlt comment above.
+    if (!createAltDescriptorSet(stage2, {&aBuf, &bBuf, &xTableBuf, &zTableBuf, &depthBuf, &irSumBuf}))
       return false;
 
     if (!createComputeStage(filterStage2, "filter_pixel_stage2.comp.spv",
@@ -524,9 +582,18 @@ bool VulkanDepthPacketProcessorImpl::runFullPipeline(const unsigned char *data9,
     barrier();
 
     // --- filterPixelStage1 (bilateral filter) ---
-    commandBuffer->bindPipeline(vk::PipelineBindPoint::eCompute, *filterStage1.pipeline);
-    commandBuffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, *filterStage1.pipelineLayout, 0, {*filterStage1.descSet}, {});
+    // If disabled, stage2 below reads directly from the unfiltered a/b
+    // buffers via descSetAlt instead. Note max_edge_test is only ever
+    // written here -- if this is skipped, filterPixelStage2 later reads
+    // whatever max_edge_test held from a previous frame (or uninitialized
+    // GPU memory on the very first one). That matches OpenCL's own
+    // behavior in this same config combination (buf_edge_test is only
+    // written by kernel_filterPixelStage1 there too), not a Vulkan-specific
+    // gap.
+    if (config.EnableBilateralFilter)
     {
+      commandBuffer->bindPipeline(vk::PipelineBindPoint::eCompute, *filterStage1.pipeline);
+      commandBuffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, *filterStage1.pipelineLayout, 0, {*filterStage1.descSet}, {});
       struct PushConstants
       {
         float jointBilateralThreshold;
@@ -538,13 +605,14 @@ bool VulkanDepthPacketProcessorImpl::runFullPipeline(const unsigned char *data9,
       pc.jointBilateralExp = params.joint_bilateral_exp;
       pc.jointBilateralMaxEdge = params.joint_bilateral_max_edge;
       commandBuffer->pushConstants(*filterStage1.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(pc), &pc);
+      commandBuffer->dispatch(numGroups, 1, 1);
+      barrier();
     }
-    commandBuffer->dispatch(numGroups, 1, 1);
-    barrier();
 
     // --- processPixelStage2 (phase unwrapping / dealiasing) ---
     commandBuffer->bindPipeline(vk::PipelineBindPoint::eCompute, *stage2.pipeline);
-    commandBuffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, *stage2.pipelineLayout, 0, {*stage2.descSet}, {});
+    commandBuffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, *stage2.pipelineLayout, 0,
+                                       {config.EnableBilateralFilter ? *stage2.descSet : *stage2.descSetAlt}, {});
     {
       struct PushConstants
       {
@@ -573,9 +641,10 @@ bool VulkanDepthPacketProcessorImpl::runFullPipeline(const unsigned char *data9,
     barrier();
 
     // --- filterPixelStage2 (edge-aware filter) ---
-    commandBuffer->bindPipeline(vk::PipelineBindPoint::eCompute, *filterStage2.pipeline);
-    commandBuffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, *filterStage2.pipelineLayout, 0, {*filterStage2.descSet}, {});
+    if (config.EnableEdgeAwareFilter)
     {
+      commandBuffer->bindPipeline(vk::PipelineBindPoint::eCompute, *filterStage2.pipeline);
+      commandBuffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, *filterStage2.pipelineLayout, 0, {*filterStage2.descSet}, {});
       struct PushConstants
       {
         float minDepth;
@@ -598,8 +667,8 @@ bool VulkanDepthPacketProcessorImpl::runFullPipeline(const unsigned char *data9,
       pc.edgeAvgDeltaThreshold = params.edge_avg_delta_threshold;
       pc.maxEdgeCount = params.max_edge_count;
       commandBuffer->pushConstants(*filterStage2.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(pc), &pc);
+      commandBuffer->dispatch(numGroups, 1, 1);
     }
-    commandBuffer->dispatch(numGroups, 1, 1);
 
     commandBuffer->end();
 
@@ -617,24 +686,34 @@ bool VulkanDepthPacketProcessorImpl::runFullPipeline(const unsigned char *data9,
       return false;
     }
 
-    unpackVec3Buffer(aBuf.mapped, debugA);
-    unpackVec3Buffer(bBuf.mapped, debugB);
-    unpackVec3Buffer(nBuf.mapped, debugN);
-    unpackVec3Buffer(aFilteredBuf.mapped, debugFilteredA);
-    unpackVec3Buffer(bFilteredBuf.mapped, debugFilteredB);
+    // Full-image CPU-side unpack/copy for every buffer is only worth
+    // paying for during verification (see VulkanStage1Verify) -- doing it
+    // unconditionally on every real streamed frame stalled the USB
+    // depth-packet-reception thread badly enough to cause real packet loss
+    // (the fixed-size buffer pool feeding that thread blocks in
+    // allocateBuffer() once this processing thread falls behind).
+    if (debugCapture)
+    {
+      unpackVec3Buffer(aBuf.mapped, debugA);
+      unpackVec3Buffer(bBuf.mapped, debugB);
+      unpackVec3Buffer(nBuf.mapped, debugN);
+      unpackVec3Buffer(aFilteredBuf.mapped, debugFilteredA);
+      unpackVec3Buffer(bFilteredBuf.mapped, debugFilteredB);
 
-    debugIr.assign(static_cast<const float *>(irBuf.mapped), static_cast<const float *>(irBuf.mapped) + IMAGE_SIZE);
-    debugDepth.assign(static_cast<const float *>(depthBuf.mapped), static_cast<const float *>(depthBuf.mapped) + IMAGE_SIZE);
-    debugIrSum.assign(static_cast<const float *>(irSumBuf.mapped), static_cast<const float *>(irSumBuf.mapped) + IMAGE_SIZE);
-    debugFiltered.assign(static_cast<const float *>(filteredBuf.mapped), static_cast<const float *>(filteredBuf.mapped) + IMAGE_SIZE);
-    debugMaxEdgeTest.assign(static_cast<const uint32_t *>(maxEdgeTestBuf.mapped), static_cast<const uint32_t *>(maxEdgeTestBuf.mapped) + IMAGE_SIZE);
+      debugIr.assign(static_cast<const float *>(irBuf.mapped), static_cast<const float *>(irBuf.mapped) + IMAGE_SIZE);
+      debugDepth.assign(static_cast<const float *>(depthBuf.mapped), static_cast<const float *>(depthBuf.mapped) + IMAGE_SIZE);
+      debugIrSum.assign(static_cast<const float *>(irSumBuf.mapped), static_cast<const float *>(irSumBuf.mapped) + IMAGE_SIZE);
+      debugFiltered.assign(static_cast<const float *>(filteredBuf.mapped), static_cast<const float *>(filteredBuf.mapped) + IMAGE_SIZE);
+      debugMaxEdgeTest.assign(static_cast<const uint32_t *>(maxEdgeTestBuf.mapped), static_cast<const uint32_t *>(maxEdgeTestBuf.mapped) + IMAGE_SIZE);
+    }
 
     if (!ir_frame)
       newIrFrame();
     if (!depth_frame)
       newDepthFrame();
     std::memcpy(ir_frame->data, irBuf.mapped, IMAGE_SIZE * sizeof(float));
-    std::memcpy(depth_frame->data, filteredBuf.mapped, IMAGE_SIZE * sizeof(float));
+    const void *finalDepthSrc = config.EnableEdgeAwareFilter ? filteredBuf.mapped : depthBuf.mapped;
+    std::memcpy(depth_frame->data, finalDepthSrc, IMAGE_SIZE * sizeof(float));
 
     return true;
   }
@@ -740,9 +819,9 @@ void VulkanDepthPacketProcessor::process(const DepthPacket &packet)
   }
 }
 
-Allocator *VulkanDepthPacketProcessor::getAllocator()
+void VulkanDepthPacketProcessor::enableDebugCapture(bool enable)
 {
-  return nullptr;
+  impl_->debugCapture = enable;
 }
 
 const std::vector<float> &VulkanDepthPacketProcessor::debugStage1A() const { return impl_->debugA; }
