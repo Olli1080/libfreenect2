@@ -20,7 +20,7 @@ generate_resources_target(RESOURCES_INC_FILE opengl
   src/opengl/shader/stage2.fs
 )
 target_sources(freenect2_opengl PRIVATE ${RESOURCES_INC_FILE})
-target_compile_definitions(freenect2_opengl PRIVATE RESOURCES_INC)
+target_compile_definitions(freenect2_opengl PRIVATE RESOURCES_INC RESOURCES_INC_PATH="resources_opengl.inc.h")
 
 freenect2_setup_backend_library(freenect2_opengl)
 

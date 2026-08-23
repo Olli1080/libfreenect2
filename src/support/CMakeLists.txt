@@ -65,4 +65,4 @@ generate_resources_target(RESOURCES_INC_FILE core
   src/data/kinect2_depth_reg_imag.yml
 )
 target_sources(freenect2_support PRIVATE ${RESOURCES_INC_FILE})
-target_compile_definitions(freenect2_support PRIVATE RESOURCES_INC)
+target_compile_definitions(freenect2_support PRIVATE RESOURCES_INC RESOURCES_INC_PATH="resources_core.inc.h")

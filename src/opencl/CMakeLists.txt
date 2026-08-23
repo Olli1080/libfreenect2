@@ -16,7 +16,7 @@ generate_resources_target(RESOURCES_INC_FILE opencl
   src/opencl/opencl_kde_depth_packet_processor.cl
 )
 target_sources(freenect2_opencl PRIVATE ${RESOURCES_INC_FILE})
-target_compile_definitions(freenect2_opencl PRIVATE RESOURCES_INC)
+target_compile_definitions(freenect2_opencl PRIVATE RESOURCES_INC RESOURCES_INC_PATH="resources_opencl.inc.h")
 
 freenect2_setup_backend_library(freenect2_opencl)
 
