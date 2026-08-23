@@ -7,6 +7,7 @@ option(BUILD_EXAMPLES "Build examples (Protonect)" ON)
 option(BUILD_OPENNI2_DRIVER "Build OpenNI2 driver plugin" ON)
 option(BUILD_STREAMER_RECORDER "Build network streaming tool" OFF)
 option(BUILD_PCL_EXAMPLE "Build PCL point cloud visualization example" OFF)
+option(BUILD_ONNX_EXAMPLES "Build ONNX Runtime object-detection/pose examples" OFF)
 option(ENABLE_PROFILING "Collect profiling stats (memory consuming)" OFF)
 
 # --- Backend Options ---
@@ -44,6 +45,10 @@ endif()
 
 if(BUILD_PCL_EXAMPLE)
   list(APPEND VCPKG_MANIFEST_FEATURES "pcl")
+endif()
+
+if(BUILD_ONNX_EXAMPLES)
+  list(APPEND VCPKG_MANIFEST_FEATURES "onnx")
 endif()
 
 # --- Compiler Options ---

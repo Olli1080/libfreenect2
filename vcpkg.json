@@ -54,6 +54,13 @@
         "vulkan",
         "shaderc"
       ]
+    },
+    "onnx": {
+      "description": "Enable ONNX Runtime object-detection/pose example apps",
+      "dependencies": [
+        "onnxruntime",
+        "opencv"
+      ]
     }
   }
 }

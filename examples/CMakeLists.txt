@@ -107,3 +107,23 @@ if(BUILD_PCL_EXAMPLE)
   endif()
 endif()
 
+# --- ONNX Runtime Object Detection / Pose Estimation Examples ---
+if(BUILD_ONNX_EXAMPLES)
+  find_package(onnxruntime CONFIG REQUIRED)
+  find_package(OpenCV REQUIRED)
+
+  add_library(onnx_common OBJECT onnx_common.cpp)
+  target_compile_features(onnx_common PUBLIC cxx_std_17)
+  target_link_libraries(onnx_common PUBLIC onnxruntime::onnxruntime ${OpenCV_LIBS})
+
+  add_executable(ONNXObjectDetection ONNXObjectDetection.cpp)
+  target_compile_features(ONNXObjectDetection PRIVATE cxx_std_17)
+  target_link_libraries(ONNXObjectDetection PRIVATE freenect2 onnx_common)
+  install(TARGETS ONNXObjectDetection DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+  add_executable(ONNXPoseEstimation ONNXPoseEstimation.cpp)
+  target_compile_features(ONNXPoseEstimation PRIVATE cxx_std_17)
+  target_link_libraries(ONNXPoseEstimation PRIVATE freenect2 onnx_common)
+  install(TARGETS ONNXPoseEstimation DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
