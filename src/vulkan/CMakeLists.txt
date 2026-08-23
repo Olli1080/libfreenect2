@@ -1,8 +1,7 @@
 # src/vulkan/CMakeLists.txt — Vulkan depth processing backend
 #
-# Phase 1 (see the "Add a Vulkan depth-processing backend" plan): only
-# processPixelStage1 is compiled/wired so the core Vulkan plumbing can be
-# proven correct before the remaining 3 kernels are ported on top of it.
+# Phase 2 (see the "Add a Vulkan depth-processing backend" plan): all 4
+# depth-decode stages are compiled/wired and chained with barriers.
 
 add_library(freenect2_vulkan)
 
@@ -16,7 +15,12 @@ if(NOT GLSLC_EXECUTABLE)
   message(FATAL_ERROR "glslc (from vcpkg shaderc) not found -- required to compile Vulkan compute shaders")
 endif()
 
-set(VULKAN_SHADER_SOURCES process_pixel_stage1.comp)
+set(VULKAN_SHADER_SOURCES
+  process_pixel_stage1.comp
+  filter_pixel_stage1.comp
+  process_pixel_stage2.comp
+  filter_pixel_stage2.comp
+)
 set(VULKAN_SHADER_SPV_FILES)
 set(VULKAN_SHADER_SPV_NAMES)
 

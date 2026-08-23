@@ -24,15 +24,23 @@
  * either License.
  */
 
-/** @file VulkanStage1Verify.cpp Phase 1 verification tool for the Vulkan
+/** @file VulkanStage1Verify.cpp Verification tool for the Vulkan
  * depth-processing backend (see the "Add a Vulkan depth-processing backend"
  * plan). Captures one real raw depth packet plus calibration tables from an
  * actual Kinect via DumpPacketPipeline, then feeds that exact packet through
  * OpenCLDepthPacketProcessor and VulkanDepthPacketProcessor directly
- * (bypassing the normal device pipeline) and numerically diffs their
- * stage-1 (processPixelStage1) intermediate a/b/n/ir output. This is the
- * plan's explicit Phase 1 completion criterion -- not a permanent example
- * app, just the plumbing-correctness check.
+ * (bypassing the normal device pipeline) and numerically diffs every
+ * stage's intermediate output (a/b/n/ir, filtered a/b, max_edge_test,
+ * depth, ir_sum, final filtered depth). Not a permanent example app, just
+ * the plumbing-correctness check the plan's Phase 1/2 explicitly call for.
+ *
+ * A small fraction of depth/filtered pixels can legitimately differ more
+ * than the rest: processPixelStage2's phase-unwrapping math has several
+ * floor()/threshold branches (e.g. t3's fractional-part rounding), and a
+ * pixel whose value sits right at one of those boundaries can take
+ * different branches under tiny floating-point differences between OpenCL
+ * and GLSL compilers -- not necessarily a porting bug. Watch the exceed
+ * percentage, not just whether it's nonzero.
  */
 
 #include <libfreenect2/libfreenect2.hpp>
@@ -80,6 +88,23 @@ void compare(const std::vector<float> &reference, const std::vector<float> &cand
   double pct = reference.empty() ? 0.0 : 100.0 * static_cast<double>(num_exceeding) / static_cast<double>(reference.size());
   std::printf("  [%s] %zu values, max |diff| = %.6f, %zu exceed tolerance %.4f (%.4f%%)\n",
               name, reference.size(), max_abs_diff, num_exceeding, tolerance, pct);
+}
+
+void compareU32(const std::vector<uint32_t> &reference, const std::vector<uint32_t> &candidate, const char *name)
+{
+  if (reference.size() != candidate.size())
+  {
+    std::printf("  [%s] SIZE MISMATCH: OpenCL=%zu Vulkan=%zu -- cannot compare\n", name, reference.size(), candidate.size());
+    return;
+  }
+
+  size_t num_mismatch = 0;
+  for (size_t i = 0; i < reference.size(); ++i)
+    if (reference[i] != candidate[i])
+      ++num_mismatch;
+
+  double pct = reference.empty() ? 0.0 : 100.0 * static_cast<double>(num_mismatch) / static_cast<double>(reference.size());
+  std::printf("  [%s] %zu values, %zu mismatch (%.4f%%)\n", name, reference.size(), num_mismatch, pct);
 }
 
 } // namespace
@@ -182,12 +207,23 @@ int main()
   opencl_proc.process(packet);
   vulkan_proc.process(packet);
 
-  std::printf("\nStage 1 numeric comparison (OpenCL reference vs Vulkan port), tolerance chosen\n"
-              "loosely relative to raw measurement magnitudes (~10^2-10^4):\n");
+  std::printf("\nStage 1 (processPixelStage1) -- OpenCL reference vs Vulkan port:\n");
   compare(opencl_proc.debugStage1A(), vulkan_proc.debugStage1A(), 0.05f, "a");
   compare(opencl_proc.debugStage1B(), vulkan_proc.debugStage1B(), 0.05f, "b");
   compare(opencl_proc.debugStage1N(), vulkan_proc.debugStage1N(), 0.05f, "n");
   compare(opencl_proc.debugStage1Ir(), vulkan_proc.debugStage1Ir(), 0.05f, "ir");
+
+  std::printf("\nfilterPixelStage1 (bilateral filter):\n");
+  compare(opencl_proc.debugFilteredA(), vulkan_proc.debugFilteredA(), 0.05f, "a_filtered");
+  compare(opencl_proc.debugFilteredB(), vulkan_proc.debugFilteredB(), 0.05f, "b_filtered");
+  compareU32(opencl_proc.debugMaxEdgeTest(), vulkan_proc.debugMaxEdgeTest(), "max_edge_test");
+
+  std::printf("\nprocessPixelStage2 (phase unwrapping):\n");
+  compare(opencl_proc.debugDepth(), vulkan_proc.debugDepth(), 1.0f, "depth");
+  compare(opencl_proc.debugIrSum(), vulkan_proc.debugIrSum(), 0.05f, "ir_sum");
+
+  std::printf("\nfilterPixelStage2 (edge-aware filter, final output):\n");
+  compare(opencl_proc.debugFiltered(), vulkan_proc.debugFiltered(), 1.0f, "filtered");
 
   return 0;
 }

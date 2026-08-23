@@ -32,6 +32,7 @@
 #include <internal/libfreenect2/depth_packet_processor.h>
 #include <freenect2_opencl/export.h>
 
+#include <cstdint>
 #include <vector>
 
 namespace libfreenect2
@@ -58,18 +59,28 @@ public:
   void process(const DepthPacket &packet) override;
 
   /** Debug-only verification hook for the Vulkan backend port (see the "Add
-   * a Vulkan depth-processing backend" plan): captures stage 1's
-   * intermediate a/b/n/ir buffers for the most recently processed packet so
-   * they can be diffed numerically against VulkanDepthPacketProcessor's
-   * equivalent debugStage1*() output. Off by default -- enabling it adds a
-   * synchronous buffer readback after stage 1 that normal use doesn't need.
-   * a/b/n are float4-per-pixel (xyz = one value per IR frequency layer, w
-   * padding), matching cl_float3's host layout; ir is float-per-pixel. */
+   * a Vulkan depth-processing backend" plan): captures every stage's
+   * intermediate buffers for the most recently processed packet so they can
+   * be diffed numerically against VulkanDepthPacketProcessor's equivalent
+   * debug*() output. Off by default -- enabling it adds synchronous buffer
+   * readbacks that normal use doesn't need. a/b/n and their filtered
+   * counterparts are float3-per-pixel (dense, one value per IR frequency
+   * layer -- cl_float3's host-side vec4 padding is stripped before storing
+   * here); depth/ir_sum/filtered/ir are float-per-pixel; max_edge_test is
+   * one 0-or-1 value per pixel (widened from the underlying uchar buffer to
+   * match VulkanDepthPacketProcessor::debugMaxEdgeTest()'s uint32 layout,
+   * which GLSL's lack of a native byte storage type forced). */
   void enableStage1DebugCapture(bool enable);
   const std::vector<float> &debugStage1A() const;
   const std::vector<float> &debugStage1B() const;
   const std::vector<float> &debugStage1N() const;
   const std::vector<float> &debugStage1Ir() const;
+  const std::vector<float> &debugFilteredA() const;
+  const std::vector<float> &debugFilteredB() const;
+  const std::vector<uint32_t> &debugMaxEdgeTest() const;
+  const std::vector<float> &debugDepth() const;
+  const std::vector<float> &debugIrSum() const;
+  const std::vector<float> &debugFiltered() const;
 protected:
   Allocator *getAllocator() override;
 private:

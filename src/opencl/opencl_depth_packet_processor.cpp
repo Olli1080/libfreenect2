@@ -224,9 +224,12 @@ public:
   cl::Buffer buf_depth;
   cl::Buffer buf_ir_sum;
 
-  // Debug-only stage-1 verification capture (see header comment).
+  // Debug-only verification capture (see header comment).
   bool debugCaptureStage1 = false;
   std::vector<float> debug_a_, debug_b_, debug_n_, debug_ir_;
+  std::vector<float> debug_a_filtered_, debug_b_filtered_;
+  std::vector<uint32_t> debug_edge_test_;
+  std::vector<float> debug_depth_, debug_ir_sum_, debug_filtered_;
   cl::Buffer buf_filtered;
 
   bool deviceInitialized;
@@ -622,6 +625,32 @@ public:
         debug_n_[i * 3 + 2] = padded_n[i * 4 + 2];
       }
       std::memcpy(debug_ir_.data(), ir_frame->data, IMAGE_SIZE * sizeof(float));
+
+      std::vector<float> padded_a_filtered(IMAGE_SIZE * 4), padded_b_filtered(IMAGE_SIZE * 4);
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_a_filtered, CL_TRUE, 0, buf_a_filtered_size, padded_a_filtered.data()));
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_b_filtered, CL_TRUE, 0, buf_b_filtered_size, padded_b_filtered.data()));
+      debug_a_filtered_.resize(IMAGE_SIZE * 3);
+      debug_b_filtered_.resize(IMAGE_SIZE * 3);
+      for (size_t i = 0; i < IMAGE_SIZE; ++i)
+      {
+        debug_a_filtered_[i * 3 + 0] = padded_a_filtered[i * 4 + 0];
+        debug_a_filtered_[i * 3 + 1] = padded_a_filtered[i * 4 + 1];
+        debug_a_filtered_[i * 3 + 2] = padded_a_filtered[i * 4 + 2];
+        debug_b_filtered_[i * 3 + 0] = padded_b_filtered[i * 4 + 0];
+        debug_b_filtered_[i * 3 + 1] = padded_b_filtered[i * 4 + 1];
+        debug_b_filtered_[i * 3 + 2] = padded_b_filtered[i * 4 + 2];
+      }
+
+      std::vector<unsigned char> edge_test_bytes(IMAGE_SIZE);
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_edge_test, CL_TRUE, 0, buf_edge_test_size, edge_test_bytes.data()));
+      debug_edge_test_.assign(edge_test_bytes.begin(), edge_test_bytes.end());
+
+      debug_depth_.resize(IMAGE_SIZE);
+      debug_ir_sum_.resize(IMAGE_SIZE);
+      debug_filtered_.resize(IMAGE_SIZE);
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_depth, CL_TRUE, 0, buf_depth_size, debug_depth_.data()));
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_ir_sum, CL_TRUE, 0, buf_ir_sum_size, debug_ir_sum_.data()));
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_filtered, CL_TRUE, 0, buf_filtered_size, debug_filtered_.data()));
     }
 
 #ifdef LIBFREENECT2_WITH_PROFILING_CL
@@ -871,6 +900,12 @@ const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1A() const { ret
 const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1B() const { return impl_->debug_b_; }
 const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1N() const { return impl_->debug_n_; }
 const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1Ir() const { return impl_->debug_ir_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugFilteredA() const { return impl_->debug_a_filtered_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugFilteredB() const { return impl_->debug_b_filtered_; }
+const std::vector<uint32_t> &OpenCLDepthPacketProcessor::debugMaxEdgeTest() const { return impl_->debug_edge_test_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugDepth() const { return impl_->debug_depth_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugIrSum() const { return impl_->debug_ir_sum_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugFiltered() const { return impl_->debug_filtered_; }
 
 Allocator *OpenCLDepthPacketProcessor::getAllocator()
 {

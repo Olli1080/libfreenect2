@@ -26,13 +26,14 @@
 
 /** @file vulkan_depth_packet_processor.h Depth packet processor using Vulkan.
  *
- * Phase 1 (see the "Add a Vulkan depth-processing backend" plan): only
- * processPixelStage1 is implemented so the core Vulkan plumbing (buffer
- * upload, descriptor sets, push constants, dispatch, barrier, readback) can
- * be proven correct against the OpenCL backend's own stage-1 output before
- * the remaining 3 stages are ported on top of it. process() currently
- * populates only the intermediate a/b/n/ir buffers (exposed for
- * verification) and does not yet produce a final depth Frame.
+ * Phase 2 (see the "Add a Vulkan depth-processing backend" plan): all 4
+ * depth-decode stages (processPixelStage1, filterPixelStage1,
+ * processPixelStage2, filterPixelStage2) are ported and chained with
+ * barriers in a single command buffer submission. process() produces a
+ * real depth + IR Frame and notifies listener_, same as the OpenCL/CPU
+ * backends. The bilateral (stage 1) and edge-aware (stage 2) filters are
+ * currently always applied -- the EnableBilateralFilter/EnableEdgeAwareFilter
+ * config toggles other backends respect aren't wired up yet (Phase 3).
  */
 
 #ifndef VULKAN_DEPTH_PACKET_PROCESSOR_H_
@@ -41,6 +42,7 @@
 #include <internal/libfreenect2/depth_packet_processor.h>
 #include <freenect2_vulkan/export.h>
 
+#include <cstdint>
 #include <vector>
 
 namespace libfreenect2
@@ -48,7 +50,7 @@ namespace libfreenect2
 
 class VulkanDepthPacketProcessorImpl;
 
-/** Depth packet processor using Vulkan. Phase 1: stage 1 only, see the
+/** Depth packet processor using Vulkan. Phase 2: all 4 stages, see the
  * file-level comment above. */
 class FREENECT2_VULKAN_EXPORT VulkanDepthPacketProcessor : public DepthPacketProcessor
 {
@@ -67,15 +69,22 @@ public:
 
   void process(const DepthPacket &packet) override;
 
-  /** Phase-1-only verification hooks: intermediate stage-1 output for the
-   * most recently processed packet, one entry per pixel (TABLE_SIZE),
-   * interleaved xyz per pixel for a/b/n (matching the OpenCL kernel's
-   * float3 layout). Removed once the full pipeline (Phase 2/3) lands and
-   * process() produces a real depth Frame instead. */
+  /** Verification hooks: intermediate output of each stage for the most
+   * recently processed packet, one entry per pixel (TABLE_SIZE). a/b/n and
+   * their filtered counterparts are interleaved xyz per pixel (matching the
+   * OpenCL kernel's float3 layout); depth/ir_sum/filtered/ir are one float
+   * per pixel; max_edge_test is one 0-or-1 value per pixel. Used to diff
+   * against OpenCL's equivalent buffers on real captured hardware data. */
   const std::vector<float> &debugStage1A() const;
   const std::vector<float> &debugStage1B() const;
   const std::vector<float> &debugStage1N() const;
   const std::vector<float> &debugStage1Ir() const;
+  const std::vector<float> &debugFilteredA() const;
+  const std::vector<float> &debugFilteredB() const;
+  const std::vector<uint32_t> &debugMaxEdgeTest() const;
+  const std::vector<float> &debugDepth() const;
+  const std::vector<float> &debugIrSum() const;
+  const std::vector<float> &debugFiltered() const;
 
 protected:
   Allocator *getAllocator() override;
