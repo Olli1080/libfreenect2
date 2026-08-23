@@ -29,6 +29,14 @@ This driver supports:
 * IR and depth image transfer
 * registration of RGB and depth images
 
+This fork ([Olli1080/libfreenect2](https://github.com/Olli1080/libfreenect2)) additionally adds:
+* a Vulkan depth-processing backend (`ENABLE_VULKAN`, alongside OpenGL/OpenCL/CUDA)
+* microphone-array audio capture with direction-of-arrival/beamforming DSP (`ENABLE_AUDIO`)
+* a VA-API hardware JPEG decode backend for Intel GPUs on Linux (`ENABLE_VAAPI`, off by default)
+* example apps: a PCL point-cloud viewer (`BUILD_PCL_EXAMPLE`), ONNX Runtime object-detection/pose/hand-tracking demos (`BUILD_ONNX_EXAMPLES`), and a network streaming/recording tool (`BUILD_STREAMER_RECORDER`)
+
+See [cmake/Options.cmake](cmake/Options.cmake) for the full list of build options.
+
 Missing features:
 * firmware updates (see [issue #460](https://github.com/OpenKinect/libfreenect2/issues/460) for WiP)
 
@@ -61,9 +69,11 @@ It has been reported to work for up to 5 devices on a high-end PC using multiple
 * OpenGL depth processing: OpenGL 3.1+ (Windows, Linux, Mac OS X). OpenGL ES is not supported at the moment.
 * OpenCL depth processing: OpenCL 1.1
 * CUDA depth processing: CUDA 11+ (CUDA Toolkit 11.x or newer)
+* Vulkan depth processing: Vulkan 1.2+
 * VAAPI JPEG decoding: Intel (minimum Ivy Bridge or newer) and Linux only, optional hardware-accelerated alternative to TurboJPEG, off by default
 * VideoToolbox JPEG decoding: macOS only
 * OpenNI2 integration: OpenNI2 2.2.0.33
+* Microphone array audio capture: FFTW3 (for direction-of-arrival/beamforming DSP)
 
 
 ## Troubleshooting and reporting bugs
@@ -115,46 +125,49 @@ When you report USB issues, please attach relevant debug log from running the pr
 
     You can go back and forth between the SDK driver and the libusbK driver very quickly and easily with these steps.
 
-* Install libusb
-
-    Download the latest build (.7z file) from https://github.com/libusb/libusb/releases, and extract as `depends/libusb` (rename folder `libusb-1.x.y` to `libusb` if any).
-* Install TurboJPEG
-
-    Download the `-vc64.exe` installer from http://sourceforge.net/projects/libjpeg-turbo/files, extract it to `c:\libjpeg-turbo64` (the installer's default) or `depends/libjpeg-turbo64`, or anywhere as specified by the environment variable `TurboJPEG_ROOT`.
-* Install GLFW
-
-    Download from http://www.glfw.org/download.html (64-bit), extract as `depends/glfw` (rename `glfw-3.x.x.bin.WIN64` to `glfw`), or anywhere as specified by the environment variable `GLFW_ROOT`.
-* Install OpenCL (optional)
-    1. Intel GPU: Download "Intel® SDK for OpenCL™ Applications 2016" from https://software.intel.com/en-us/intel-opencl (requires free registration) and install it.
-* Install CUDA (optional, Nvidia only)
-    1. Download CUDA Toolkit and install it. You MUST install the samples too.
-* Install OpenNI2 (optional)
-
-    Download OpenNI 2.2.0.33 (x64) from http://structure.io/openni, install it to default locations (`C:\Program Files...`).
 * Build
 
-    The default installation path is `install`, you may change it by editing `CMAKE_INSTALL_PREFIX`.
+    This repo vendors [vcpkg](https://github.com/microsoft/vcpkg) as a submodule (`externals/vcpkg`) in manifest mode, so all C++ dependencies (libusb, TurboJPEG, GLFW, OpenCL, Vulkan/shaderc, FFTW3, OpenNI2, etc.) are fetched and built automatically from the top-level `vcpkg.json` based on which `cmake/Options.cmake` features you enable -- no manual per-dependency downloads needed.
+
+    The default installation path is `install`, you may change it by editing `CMAKE_INSTALL_PREFIX`. This repo ships a [CMakePresets.json](CMakePresets.json); the easiest path is the bundled `vs2026-vcpkg-all` preset:
+    ```
+    cmake --preset vs2026-vcpkg-all
+    cmake --build --preset vs2026-vcpkg-all --config RelWithDebInfo --target install
+    ```
+    Or configure manually against a different Visual Studio version:
     ```
     mkdir build && cd build
-    cmake .. -G "Visual Studio 17 2022"
+    cmake .. -G "Visual Studio 18 2026" -DCMAKE_TOOLCHAIN_FILE=../externals/vcpkg/scripts/buildsystems/vcpkg.cmake
     cmake --build . --config RelWithDebInfo --target install
     ```
-    Or `-G "Visual Studio 16 2019"`.
+    Toggle optional backends/examples with `-D<OPTION>=ON/OFF` (see [cmake/Options.cmake](cmake/Options.cmake)), e.g. `-DENABLE_VULKAN=OFF` or `-DBUILD_PCL_EXAMPLE=ON`.
+* Install CUDA (optional, Nvidia only)
+
+    CUDA is not vcpkg-managed. Download and install the CUDA Toolkit (including the samples) before configuring with `-DENABLE_CUDA=ON`.
 * Run the test program: `.\install\bin\Protonect.exe`, or start debugging in Visual Studio.
 * Test OpenNI2 (optional)
 
-    Copy freenect2-openni2.dll, and other dll files (libusb-1.0.dll, glfw.dll, etc.) in `install\bin` to `C:\Program Files\OpenNI2\Tools\OpenNI2\Drivers`. Then run `C:\Program Files\OpenNI\Tools\NiViewer.exe`. Environment variable `LIBFREENECT2_PIPELINE` can be set to `cl`, `cuda`, etc to specify the pipeline.
+    Copy freenect2-openni2.dll, and other dll files (libusb-1.0.dll, glfw3.dll, etc.) in `install\bin` to `C:\Program Files\OpenNI2\Tools\OpenNI2\Drivers`. Then run `C:\Program Files\OpenNI\Tools\NiViewer.exe`. Environment variable `LIBFREENECT2_PIPELINE` can be set to `cl`, `cuda`, `vk`, etc to specify the pipeline.
+
+#### Non-vcpkg / manual builds
+
+If you'd rather not use vcpkg, `cmake_modules/` still ships `Find*.cmake` modules for GLFW3, TurboJPEG, OpenNI2, and OpenCL, driven by the same `<Dep>_ROOT` environment-variable convention as upstream libfreenect2 (e.g. extract libusb/GLFW/TurboJPEG anywhere and point `GLFW_ROOT`/`TurboJPEG_ROOT` at them, or drop them under `depends/<name>`). This path is intentionally kept working for anyone who can't or doesn't want to take the vcpkg dependency.
 
 ### Windows / vcpkg
 
-You can download and install libfreenect2 using the [vcpkg](https://github.com/Microsoft/vcpkg) dependency manager:
+The libfreenect2 port in the official [vcpkg registry](https://github.com/microsoft/vcpkg) tracks upstream [OpenKinect/libfreenect2](https://github.com/OpenKinect/libfreenect2) release tags and does **not** include this fork's Vulkan/audio/VAAPI backends.
+
+To consume this fork from another CMake project via vcpkg, use it as a local overlay port:
 ```
-git clone https://github.com/Microsoft/vcpkg.git
-cd vcpkg
-./vcpkg integrate install
-vcpkg install libfreenect2
+git clone https://github.com/Olli1080/libfreenect2.git
 ```
-The libfreenect2 port in vcpkg is kept up to date by Microsoft team members and community contributors. If the version is out of date, please [create an issue or pull request](https://github.com/Microsoft/vcpkg) on the vcpkg repository.
+Then in your own project's `vcpkg-configuration.json`, point `overlay-ports` at the clone's `overlay-ports` directory:
+```json
+{
+  "overlay-ports": ["<path-to-libfreenect2-clone>/overlay-ports"]
+}
+```
+(or pass `--overlay-ports=<path-to-libfreenect2-clone>/overlay-ports` on the `vcpkg install` command line). `vcpkg install libfreenect2` then resolves against this fork's port (`overlay-ports/libfreenect2/`) instead of the upstream registry one. Available features: `opengl`, `opencl`, `openni2`, `audio`, `vulkan` (all on by default; see [overlay-ports/libfreenect2/vcpkg.json](overlay-ports/libfreenect2/vcpkg.json)).
 
 ### MacOS
 

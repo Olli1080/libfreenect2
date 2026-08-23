@@ -1,0 +1,61 @@
+{
+  "name": "libfreenect2",
+  "version": "0.2.0",
+  "description": "Open source drivers for the Kinect for Windows v2 device (Olli1080 fork: adds Vulkan depth processing, microphone-array audio capture, and other backends beyond upstream OpenKinect/libfreenect2)",
+  "homepage": "https://github.com/Olli1080/libfreenect2",
+  "license": "GPL-2.0-only OR Apache-2.0",
+  "dependencies": [
+    "libusb",
+    "libjpeg-turbo",
+    "spdlog",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "default-features": [
+    "opengl",
+    "opencl",
+    "openni2",
+    "audio",
+    "vulkan"
+  ],
+  "features": {
+    "opengl": {
+      "description": "Enable OpenGL depth processing and viewer (requires GLFW3)",
+      "dependencies": [
+        "glfw3",
+        "opengl"
+      ]
+    },
+    "opencl": {
+      "description": "Enable OpenCL depth processing",
+      "dependencies": [
+        "opencl"
+      ]
+    },
+    "openni2": {
+      "description": "Build OpenNI2 driver plugin",
+      "dependencies": [
+        "openni2"
+      ]
+    },
+    "audio": {
+      "description": "Enable Kinect v2 microphone array direction-of-arrival/beamforming DSP",
+      "dependencies": [
+        "fftw3"
+      ]
+    },
+    "vulkan": {
+      "description": "Enable Vulkan depth processing",
+      "dependencies": [
+        "vulkan",
+        "shaderc"
+      ]
+    }
+  }
+}
