@@ -128,12 +128,12 @@ private:
   void execute()
   {
     std::string name(processor_->name());
-    this_thread::set_name(name.c_str());
+    std::this_thread::set_name(name.c_str());
     std::unique_lock l(packet_mutex_);
 
     while(!shutdown_)
     {
-      WAIT_CONDITION(packet_condition_, packet_mutex_, l);
+      packet_condition_.wait(l);
 
       if(current_packet_available_)
       {

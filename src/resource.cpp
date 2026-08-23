@@ -88,13 +88,13 @@ bool loadBufferFromResources(std::string_view filename, unsigned char *buffer, c
 
   if(!loadResource(filename, &data, &length))
   {
-        LOG_ERROR("failed to load resource: {}", filename);
+    LOG_ERROR("failed to load resource: {}", filename);
     return false;
   }
 
   if(length != n)
   {
-        LOG_ERROR("wrong size of resource: {}", filename);
+    LOG_ERROR("wrong size of resource: {}", filename);
     return false;
   }
 

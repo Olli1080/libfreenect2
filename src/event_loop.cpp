@@ -29,11 +29,6 @@
 #include <libfreenect2/usb/event_loop.h>
 
 #include <libusb.h>
-#ifdef _WIN32
-#include <winsock.h>
-#else
-#include <sys/time.h>
-#endif
 
 namespace libfreenect2
 {
@@ -67,30 +62,30 @@ EventLoop::~EventLoop()
  */
 void EventLoop::start(void *usb_context)
 {
-  if(thread_ == nullptr)
-  {
-    shutdown_ = false;
-    usb_context_ = usb_context;
-    thread_ = std::make_unique<std::thread>(&EventLoop::static_execute, this);
-  }
+  if (thread_ != nullptr)
+    return;
+
+  shutdown_ = false;
+  usb_context_ = usb_context;
+  thread_ = std::make_unique<std::thread>(&EventLoop::static_execute, this);
 }
 
 /** Stop the thread. */
 void EventLoop::stop()
 {
-  if(thread_ != nullptr)
-  {
-    shutdown_ = true;
-    thread_->join();
-    thread_.reset();
-    usb_context_ = nullptr;
-  }
+  if (thread_ == nullptr)
+    return;
+  
+  shutdown_ = true;
+  thread_->join();
+  thread_.reset();
+  usb_context_ = nullptr;
 }
 
 /** Execute the job, until shut down. */
 void EventLoop::execute()
 {
-  this_thread::set_name("USB");
+  std::this_thread::set_name("USB");
   timeval t;
   t.tv_sec = 0;
   t.tv_usec = 100000;

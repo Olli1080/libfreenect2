@@ -29,8 +29,9 @@
 #ifndef PACKET_PROCESSOR_H_
 #define PACKET_PROCESSOR_H_
 
-#include "internal/libfreenect2/allocator.h"
 #include <string_view>
+
+#include "internal/libfreenect2/allocator.h"
 
 namespace libfreenect2
 {

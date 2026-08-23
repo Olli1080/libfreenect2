@@ -59,16 +59,16 @@ private:
   std::unique_ptr<Allocator> allocator;
   Buffer *buffers[2];
   bool used[2];
-  mutex used_lock;
-  condition_variable available_cond;
+  std::mutex used_lock;
+  std::condition_variable available_cond;
 public:
   PoolAllocatorImpl(Allocator *a): allocator(a), buffers(), used() {}
 
   Buffer *allocate(size_t size) override
   {
-    unique_lock guard(used_lock);
+    std::unique_lock guard(used_lock);
     while (used[0] && used[1])
-      WAIT_CONDITION(available_cond, used_lock, guard);
+        available_cond.wait(guard);
 
     if (!used[0]) {
       if (buffers[0] == nullptr)
@@ -92,7 +92,7 @@ public:
 
   void free(Buffer *b) override
   {
-    lock_guard guard(used_lock);
+    std::scoped_lock guard(used_lock);
     if (b == buffers[0]) {
       used[0] = false;
       available_cond.notify_one();

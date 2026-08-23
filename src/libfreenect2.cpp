@@ -134,7 +134,7 @@ struct IrCameraTables: Freenect2Device::IrCameraParams
     }
 
     if (divergence > 0)
-            LOG_ERROR("{} pixels in x/ztable have incorrect undistortion.", divergence);
+      LOG_ERROR("{} pixels in x/ztable have incorrect undistortion.", divergence);
 
     short y = 0;
     for (int x = 0; x < 1024; x++)
@@ -408,7 +408,7 @@ public:
 #ifdef __linux__
     if (libusb_get_version()->nano < 10952)
     {
-            LOG_ERROR("Your libusb does not support large iso buffer!");
+      LOG_ERROR("Your libusb does not support large iso buffer!");
       return;
     }
 #endif
@@ -419,7 +419,7 @@ public:
       int r = libusb_init(&ctx);
       if(r != 0)
       {
-                LOG_ERROR("failed to create usb context: {}", writeLibusbError(r));
+        LOG_ERROR("failed to create usb context: {}", writeLibusbError(r));
         return;
       }
 
@@ -450,7 +450,7 @@ public:
     if (!initialized)
       return;
 
-    devices_.push_back(device);
+    devices_.emplace_back(device);
   }
 
   void removeDevice(Freenect2DeviceImpl *device)
@@ -466,7 +466,7 @@ public:
     }
     else
     {
-            LOG_WARNING("tried to remove device, which is not in the internal device list!");
+      LOG_WARNING("tried to remove device, which is not in the internal device list!");
     }
   }
 
@@ -591,9 +591,8 @@ public:
       return 0;
 
     if(!has_device_enumeration_)
-    {
       enumerateDevices();
-    }
+    
     return enumerated_devices_.size();
   }
 
@@ -614,7 +613,7 @@ public:
 
   void addDevice(Freenect2ReplayDevice *device)
   {
-    devices_.push_back(device);
+    devices_.emplace_back(device);
   }
 
   void removeDevice(Freenect2ReplayDevice *device)
@@ -627,7 +626,7 @@ public:
     }
     else
     {
-            LOG_WARNING("tried to remove a REPLAY device, which is not in the internal device list!");
+      LOG_WARNING("tried to remove a REPLAY device, which is not in the internal device list!");
     }
   }
 
@@ -642,9 +641,7 @@ public:
 
     // Should never happen
     if(!devices_.empty())
-    {
-            LOG_WARNING("after deleting all REPLAY devices the internal device list should be empty!");
-    }
+      LOG_WARNING("after deleting all REPLAY devices the internal device list should be empty!");
   }
 
   Freenect2Device *openDevice(const std::vector<std::string>& frame_filenames, std::unique_ptr<const PacketPipeline> pipeline);
@@ -682,8 +679,6 @@ int Freenect2DeviceImpl::nextCommandSeq()
 
 bool Freenect2DeviceImpl::isSameUsbDevice(libusb_device* other)
 {
-  bool result = false;
-
   if(state_ != Closed && usb_device_ != nullptr)
   {
     unsigned char bus = libusb_get_bus_number(usb_device_.get());
@@ -692,10 +687,9 @@ bool Freenect2DeviceImpl::isSameUsbDevice(libusb_device* other)
     unsigned char other_bus = libusb_get_bus_number(other);
     unsigned char other_address = libusb_get_device_address(other);
 
-    result = (bus == other_bus) && (address == other_address);
+    return (bus == other_bus) && (address == other_address);
   }
-
-  return result;
+  return false;
 }
 
 std::string Freenect2DeviceImpl::getSerialNumber()
@@ -800,7 +794,7 @@ uint32_t Freenect2DeviceImpl::getColorSetting(ColorSettingCommandType cmd)
   command_tx_.execute(ColorSettingCommand(cmd), result);
   if (result.size() < sizeof(ColorSettingResponse))
   {
-        LOG_WARNING("failed to get color setting, response size {} too small, expected {}", result.size(), sizeof(ColorSettingResponse));
+    LOG_WARNING("failed to get color setting, response size {} too small, expected {}", result.size(), sizeof(ColorSettingResponse));
     return 0u;
   }
   ColorSettingResponse const* data = reinterpret_cast<ColorSettingResponse const*>(result.data());
@@ -823,7 +817,7 @@ void Freenect2DeviceImpl::setLedStatus(LedSettings led)
 
 bool Freenect2DeviceImpl::open()
 {
-    LOG_INFO("opening...");
+  LOG_INFO("opening...");
 
   if(state_ != Created) return false;
 
@@ -843,7 +837,7 @@ bool Freenect2DeviceImpl::open()
 
   if(max_iso_packet_size < 0x8400)
   {
-        LOG_ERROR("max iso packet size for endpoint 0x84 too small! (expected: {} got: {})", 0x8400, max_iso_packet_size);
+    LOG_ERROR("max iso packet size for endpoint 0x84 too small! (expected: {} got: {})", 0x8400, max_iso_packet_size);
     return false;
   }
 
@@ -873,13 +867,13 @@ bool Freenect2DeviceImpl::open()
   xfer_str = std::getenv("LIBFREENECT2_IR_TRANSFERS");
   if(xfer_str) ir_num_xfers = std::atoi(xfer_str);
 
-    LOG_INFO("transfer pool sizes rgb: {}*{} ir: {}*{}*{}", rgb_num_xfers, rgb_xfer_size, ir_num_xfers, ir_pkts_per_xfer, max_iso_packet_size);
+  LOG_INFO("transfer pool sizes rgb: {}*{} ir: {}*{}*{}", rgb_num_xfers, rgb_xfer_size, ir_num_xfers, ir_pkts_per_xfer, max_iso_packet_size);
   rgb_transfer_pool_.allocate(rgb_num_xfers, rgb_xfer_size);
   ir_transfer_pool_.allocate(ir_num_xfers, ir_pkts_per_xfer, max_iso_packet_size);
 
   state_ = Open;
 
-    LOG_INFO("opened");
+  LOG_INFO("opened");
 
   return true;
 }
@@ -891,7 +885,7 @@ bool Freenect2DeviceImpl::start()
 
 bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
 {
-    LOG_INFO("starting...");
+  LOG_INFO("starting...");
   if(state_ != Open) return false;
 
   CommandTransaction::Result serial_result, firmware_result, result;
@@ -909,9 +903,7 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
   std::string new_serial = SerialNumberResponse(serial_result).toString();
 
   if(serial_ != new_serial)
-  {
-        LOG_WARNING("serial number reported by libusb {} differs from serial number {} in device protocol! ", serial_, new_serial);
-  }
+    LOG_WARNING("serial number reported by libusb {} differs from serial number {} in device protocol! ", serial_, new_serial);
 
   if (!command_tx_.execute(ReadDepthCameraParametersCommand(nextCommandSeq()), result)) return false;
   setIrCameraParams(DepthCameraParamsResponse(result).toIrCameraParams());
@@ -934,11 +926,10 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
     if (status != last)
             LOG_DEBUG("status 0x090000: {}", status);
     if ((status & 1) == 0)
-      this_thread::sleep_for(chrono::milliseconds(100));
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
-  if (timeout == 0) {
-        LOG_DEBUG("status 0x090000: timeout");
-  }
+  if (timeout == 0)
+    LOG_DEBUG("status 0x090000: timeout");
 
   if (!command_tx_.execute(InitStreamsCommand(nextCommandSeq()), result)) return false;
 
@@ -968,20 +959,20 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
 */
   if (enable_rgb)
   {
-        LOG_INFO("submitting rgb transfers...");
+    LOG_INFO("submitting rgb transfers...");
     rgb_transfer_pool_.enableSubmission();
     if (!rgb_transfer_pool_.submit()) return false;
   }
 
   if (enable_depth)
   {
-        LOG_INFO("submitting depth transfers...");
+    LOG_INFO("submitting depth transfers...");
     ir_transfer_pool_.enableSubmission();
     if (!ir_transfer_pool_.submit()) return false;
   }
 
   state_ = Streaming;
-    LOG_INFO("started");
+  LOG_INFO("started");
   return true;
 }
 
@@ -991,20 +982,20 @@ bool Freenect2DeviceImpl::stop()
 
   if(state_ != Streaming)
   {
-        LOG_INFO("already stopped, doing nothing");
+    LOG_INFO("already stopped, doing nothing");
     return false;
   }
 
   if (rgb_transfer_pool_.enabled())
   {
-        LOG_INFO("canceling rgb transfers...");
+    LOG_INFO("canceling rgb transfers...");
     rgb_transfer_pool_.disableSubmission();
     rgb_transfer_pool_.cancel();
   }
 
   if (ir_transfer_pool_.enabled())
   {
-        LOG_INFO("canceling depth transfers...");
+    LOG_INFO("canceling depth transfers...");
     ir_transfer_pool_.disableSubmission();
     ir_transfer_pool_.cancel();
   }
@@ -1024,24 +1015,22 @@ bool Freenect2DeviceImpl::stop()
   if (usb_control_.setVideoTransferFunctionState(UsbControl::Disabled) != UsbControl::Success) return false;
 
   state_ = Open;
-    LOG_INFO("stopped");
+  LOG_INFO("stopped");
   return true;
 }
 
 bool Freenect2DeviceImpl::close()
 {
-    LOG_INFO("closing...");
+  LOG_INFO("closing...");
 
   if(state_ == Closed)
   {
-        LOG_INFO("already closed, doing nothing");
+    LOG_INFO("already closed, doing nothing");
     return true;
   }
 
   if(state_ == Streaming)
-  {
     stop();
-  }
 
   CommandTransaction::Result result;
   command_tx_.execute(SetModeEnabledWith0x00640064Command(nextCommandSeq()), result);
@@ -1068,23 +1057,23 @@ bool Freenect2DeviceImpl::close()
 
   if(has_usb_interfaces_)
   {
-        LOG_INFO("releasing usb interfaces...");
+    LOG_INFO("releasing usb interfaces...");
 
     usb_control_.releaseInterfaces();
     has_usb_interfaces_ = false;
   }
 
-    LOG_INFO("deallocating usb transfer pools...");
+  LOG_INFO("deallocating usb transfer pools...");
   rgb_transfer_pool_.deallocate();
   ir_transfer_pool_.deallocate();
 
-    LOG_INFO("closing usb device...");
+  LOG_INFO("closing usb device...");
 
   usb_device_handle_.reset();
   usb_device_.reset();
 
   state_ = Closed;
-    LOG_INFO("closed");
+  LOG_INFO("closed");
   return true;
 }
 
@@ -1125,8 +1114,8 @@ std::unique_ptr<const PacketPipeline> createDefaultPacketPipeline()
     auto pipeline = createPacketPipelineByName(pipeline_env);
     if (pipeline)
       return pipeline;
-    else
-            LOG_WARNING("`{}' pipeline is not available.", pipeline_env);
+    else 
+      LOG_WARNING("`{}' pipeline is not available.", pipeline_env);
   }
 
 #if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
@@ -1187,7 +1176,7 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const Packet
 
   if(idx >= num_devices)
   {
-        LOG_ERROR("requested device {} is not connected!", idx);
+    LOG_ERROR("requested device {} is not connected!", idx);
 
     return device;
   }
@@ -1197,26 +1186,25 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const Packet
 
   if(tryGetDevice(dev.dev.get(), &device))
   {
-        LOG_WARNING("device {} is already be open!", printBusAndDevice(dev.dev.get()));
+    LOG_WARNING("device {} is already be open!", printBusAndDevice(dev.dev.get()));
 
     return device;
   }
 
-  int r;
+  int r = LIBUSB_ERROR_OTHER;
   for (int i = 0; i < 10; i++)
   {
     r = libusb_open(dev.dev.get(), &dev_handle);
     if(r == LIBUSB_SUCCESS)
-    {
       break;
-    }
-        LOG_INFO("device unavailable right now, retrying");
-    this_thread::sleep_for(chrono::milliseconds(100));
+    
+    LOG_INFO("device unavailable right now, retrying");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   if(r != LIBUSB_SUCCESS)
   {
-        LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev.dev.get(), r));
+    LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev.dev.get(), r));
 
     return device;
   }
@@ -1263,7 +1251,7 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const Packet
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
       // reenumerate devices
-            LOG_INFO("re-enumerating devices after reset");
+      LOG_INFO("re-enumerating devices after reset");
       clearDeviceEnumeration();
       enumerateDevices();
 
@@ -1272,7 +1260,7 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const Packet
     }
     else if(r != LIBUSB_SUCCESS)
     {
-            LOG_ERROR("failed to reset Kinect v2: {}", printBusAndDevice(dev.dev.get(), r));
+      LOG_ERROR("failed to reset Kinect v2: {}", printBusAndDevice(dev.dev.get(), r));
 
       return device;
     }
@@ -1288,7 +1276,7 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const Packet
     delete device;
     device = nullptr;
 
-        LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev.dev.get()));
+    LOG_ERROR("failed to open Kinect v2: {}", printBusAndDevice(dev.dev.get()));
   }
 
   return device;
@@ -1302,9 +1290,7 @@ Freenect2Device *Freenect2::openDevice(const std::string &serial)
   for(int idx = 0; idx < num_devices; ++idx)
   {
     if(impl_->enumerated_devices_[idx].serial == serial)
-    {
       return impl_->openDevice(idx, std::move(pipeline), true);
-    }
   }
 
   return nullptr;
@@ -1318,9 +1304,7 @@ Freenect2Device *Freenect2::openDevice(const std::string &serial, const PacketPi
   for(int idx = 0; idx < num_devices; ++idx)
   {
     if(impl_->enumerated_devices_[idx].serial == serial)
-    {
       return impl_->openDevice(idx, std::move(p), true);
-    }
   }
 
   return nullptr;
@@ -1400,23 +1384,19 @@ void Freenect2ReplayDevice::setColorFrameListener(FrameListener* listener)
 {
   RgbPacketProcessor* proc = pipeline_->getRgbPacketProcessor();
   if (proc != nullptr)
-  {
     proc->setFrameListener(listener);
-  }
 }
 
 void Freenect2ReplayDevice::setIrAndDepthFrameListener(FrameListener* listener)
 {
   DepthPacketProcessor* proc = pipeline_->getDepthPacketProcessor();
   if (proc != nullptr)
-  {
     proc->setFrameListener(listener);
-  }
 }
 
 bool Freenect2ReplayDevice::open()
 {
-    LOG_INFO("opening...");
+  LOG_INFO("opening...");
 
   // May add file checking or params loading
 
@@ -1425,11 +1405,11 @@ bool Freenect2ReplayDevice::open()
 
 bool Freenect2ReplayDevice::close()
 {
-    LOG_INFO("closing...");
+  LOG_INFO("closing...");
 
   if(running_ == false)
   {
-        LOG_INFO("already closed, doing nothing");
+    LOG_INFO("already closed, doing nothing");
     return true;
   }
 
@@ -1445,7 +1425,7 @@ bool Freenect2ReplayDevice::close()
     pipeline_->getDepthPacketProcessor()->setFrameListener(nullptr);
 
   running_ = false;
-    LOG_INFO("closed");
+  LOG_INFO("closed");
   return true;
 }
 
@@ -1510,14 +1490,14 @@ bool Freenect2ReplayDevice::start()
 {
   running_ = true;
   t_ = std::make_unique<std::thread>(static_execute, this);
-    LOG_INFO("replay started");
+  LOG_INFO("replay started");
   return running_;
 }
 
 bool Freenect2ReplayDevice::startStreams(bool enable_rgb, bool enable_depth)
 {
-    LOG_INFO("Freenect2ReplayDevice: starting: rgb: {}, depth: {}", enable_rgb, enable_depth);
-    LOG_INFO("Freenect2ReplayDevice: unimplemented");
+  LOG_INFO("Freenect2ReplayDevice: starting: rgb: {}, depth: {}", enable_rgb, enable_depth);
+  LOG_INFO("Freenect2ReplayDevice: unimplemented");
   return false;
 }
 
@@ -1526,28 +1506,27 @@ bool Freenect2ReplayDevice::stop()
   running_ = false;
   t_->join();
   t_.reset();
-    LOG_INFO("replay stopped");
+  LOG_INFO("replay stopped");
   return true;
 }
 
 bool hasSuffix(const std::string& str, const std::string& suffix)
 {
   if (str.length() < suffix.length())
-  {
     return false;
-  }
+  
   return str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
 }
 
 bool parseFrameFilename(const std::string& frame_filename, size_t timestamp_sequence[2])
 {
-    LOG_DEBUG("parsing: {}", frame_filename);
+  LOG_DEBUG("parsing: {}", frame_filename);
   
   if (!hasSuffix(frame_filename, ".depth") &&
     !hasSuffix(frame_filename, ".jpg") &&
     !hasSuffix(frame_filename, ".jpeg"))
   {
-        LOG_ERROR("wrong suffix in the filename; need .depth, .jpg, or .jpeg");
+    LOG_ERROR("wrong suffix in the filename; need .depth, .jpg, or .jpeg");
     return false;
   }
   
@@ -1558,22 +1537,22 @@ bool parseFrameFilename(const std::string& frame_filename, size_t timestamp_sequ
   std::string ts = frame_filename.substr(0, ix1);
   std::string seq = frame_filename.substr(ix2 + 1, ix3);
 
-    LOG_DEBUG("ts: {}, seq: {}", ts, seq);
+  LOG_DEBUG("ts: {}, seq: {}", ts, seq);
 
   if(ts.empty() || seq.empty())
   {
-        LOG_ERROR("could not extract timestamp or sequence");
+    LOG_ERROR("could not extract timestamp or sequence");
     return false;
   }
   
   timestamp_sequence[0] = atoi(ts.c_str());
   timestamp_sequence[1] = atoi(seq.c_str());
 
-    LOG_DEBUG("ts: {}, seq: {}", timestamp_sequence[0], timestamp_sequence[1]);
+  LOG_DEBUG("ts: {}, seq: {}", timestamp_sequence[0], timestamp_sequence[1]);
 
   if(timestamp_sequence[0] == 0)
   {
-        LOG_WARNING("invalid timestamp");
+    LOG_WARNING("invalid timestamp");
     return false;
   }
   
@@ -1590,7 +1569,7 @@ void Freenect2ReplayDevice::run()
 
     if(parseFrameFilename(frame, timestamp_sequence) == false)
     {
-            LOG_ERROR("could not parse replay frame filename {}, skipping...", frame);
+      LOG_ERROR("could not parse replay frame filename {}, skipping...", frame);
       continue;
     }
 
@@ -1600,7 +1579,7 @@ void Freenect2ReplayDevice::run()
       
       if(!fd)
       {
-                LOG_ERROR("failed to open replay frame: {}, skipping...", frame);
+        LOG_ERROR("failed to open replay frame: {}, skipping...", frame);
         continue;
       }
 
@@ -1610,14 +1589,14 @@ void Freenect2ReplayDevice::run()
 
       if(length != buffer_size_)
       {
-                LOG_ERROR("file length: {}exceeds depth image buffer size: {}; skipping...", length, buffer_size_);
+        LOG_ERROR("file length: {}exceeds depth image buffer size: {}; skipping...", length, buffer_size_);
         continue;
       }
 
       fd.read(reinterpret_cast<char*>(packet_.memory->data), length);
       if(!fd || (size_t)fd.gcount() != length)
       {
-                LOG_ERROR("failed to read replay frame: {}: {} vs. {} bytes", frame, fd.gcount(), length);
+        LOG_ERROR("failed to read replay frame: {}: {} vs. {} bytes", frame, fd.gcount(), length);
         continue;
       }
 
@@ -1633,7 +1612,7 @@ void Freenect2ReplayDevice::run()
       }
       else
       {
-                LOG_DEBUG("skipping a replay depth packet for {} as depth processor is not ready", frame);
+        LOG_DEBUG("skipping a replay depth packet for {} as depth processor is not ready", frame);
       }
     }
   }
@@ -1667,7 +1646,7 @@ Freenect2Device *Freenect2ReplayImpl::openDevice(const std::vector<std::string>&
   {
     delete device;
     device = nullptr;
-        LOG_ERROR("failed to instantiate a replay device!");
+    LOG_ERROR("failed to instantiate a replay device!");
   }
 
   return device;

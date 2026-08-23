@@ -41,7 +41,7 @@ struct TjDeleter
   {
     if(handle != nullptr && tjDestroy(handle) == -1)
     {
-            LOG_ERROR("Failed to destroy TurboJPEG decompressor! TurboJPEG error: '{}'", tjGetErrorStr());
+      LOG_ERROR("Failed to destroy TurboJPEG decompressor! TurboJPEG error: '{}'", tjGetErrorStr());
     }
   }
 };
@@ -60,7 +60,7 @@ public:
     decompressor = std::unique_ptr<void, TjDeleter>(tjInitDecompress());
     if(decompressor == nullptr)
     {
-            LOG_ERROR("Failed to initialize TurboJPEG decompressor! TurboJPEG error: '{}'", tjGetErrorStr());
+      LOG_ERROR("Failed to initialize TurboJPEG decompressor! TurboJPEG error: '{}'", tjGetErrorStr());
     }
 
     newFrame();
@@ -114,9 +114,8 @@ void TurboJpegRgbPacketProcessor::process(const RgbPacket &packet)
     }
     else
     {
-            LOG_ERROR("Failed to decompress rgb image! TurboJPEG error: '{}'", tjGetErrorStr());
+      LOG_ERROR("Failed to decompress rgb image! TurboJPEG error: '{}'", tjGetErrorStr());
     }
-
   }
 }
 

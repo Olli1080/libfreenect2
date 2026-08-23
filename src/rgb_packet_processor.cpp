@@ -29,10 +29,7 @@
 #include <libfreenect2/rgb_packet_processor.h>
 #include <libfreenect2/async_packet_processor.h>
 
-#include <cstring>
-#include <fstream>
 #include <memory>
-#include <string>
 
 namespace libfreenect2
 {
@@ -67,9 +64,8 @@ void DumpRgbPacketProcessor::process(const RgbPacket &packet)
 
   std::memcpy(frame->data, packet.jpeg_buffer, packet.jpeg_buffer_length);
 
-  if (listener_->onNewFrame(Frame::Color, frame.get())) {
+  if (listener_->onNewFrame(Frame::Color, frame.get()))
     frame.release();
-  }
 }
 
 } /* namespace libfreenect2 */

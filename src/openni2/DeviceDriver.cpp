@@ -207,7 +207,7 @@ namespace Freenect2Driver
       if (device_stop) {
         device_used = true;
         device_stop = false;
-        thread = new libfreenect2::thread(&DeviceImpl::static_run, this);
+        thread = new std::thread(&DeviceImpl::static_run, this);
         dev->start();
       }
     }

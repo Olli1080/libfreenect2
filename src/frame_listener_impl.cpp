@@ -102,9 +102,7 @@ void SyncMultiFrameListener::waitForNewFrame(FrameMap &frame)
   std::unique_lock l(impl_->mutex_);
 
   while(!impl_->hasNewFrame())
-  {
-    WAIT_CONDITION(impl_->condition_, impl_->mutex_, l)
-  }
+    impl_->condition_.wait(l);
 
   frame = impl_->next_frame_;
   impl_->next_frame_.clear();
@@ -123,7 +121,7 @@ void SyncMultiFrameListener::release(FrameMap &frame)
   frame.clear();
 
   {
-    std::lock_guard l(impl_->mutex_);
+	std::scoped_lock l(impl_->mutex_);
     impl_->current_frame_released_ = true;
   }
 }
@@ -133,7 +131,7 @@ bool SyncMultiFrameListener::onNewFrame(Frame::Type type, Frame *frame)
   if((impl_->subscribed_frame_types_ & type) == 0) return false;
 
   {
-    std::lock_guard l(impl_->mutex_);
+	std::scoped_lock l(impl_->mutex_);
 
     if (!impl_->current_frame_released_)
       return false;

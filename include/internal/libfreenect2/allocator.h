@@ -29,7 +29,6 @@
 #ifndef ALLOCATOR_H_
 #define ALLOCATOR_H_
 
-#include <cstddef>
 #include <memory>
 
 namespace libfreenect2

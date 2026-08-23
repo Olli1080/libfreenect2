@@ -32,47 +32,35 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <chrono>
-
-#define WAIT_CONDITION(var, mutex, lock) var.wait(lock);
-
-namespace libfreenect2
-{
-
-typedef std::thread thread;
-typedef std::mutex mutex;
-typedef std::lock_guard<std::mutex> lock_guard;
-typedef std::unique_lock<std::mutex> unique_lock;
-typedef std::condition_variable condition_variable;
-
-namespace chrono
-{
-using namespace std::chrono;
-}
-
-namespace this_thread
-{
-using namespace std::this_thread;
-}
-
-} /* libfreenect2 */
 
 #if defined(__linux__)
-#include <sys/prctl.h>
+  #include <sys/prctl.h>
 #elif defined(__APPLE__)
-#include <pthread.h>
+  #include <pthread.h>
+#elif defined(_WIN32)
+  #include <windows.h>
+  #include <processthreadsapi.h>
 #endif
 
-namespace libfreenect2
+namespace std
 {
 namespace this_thread
 {
-  static inline void set_name(const char *name)
+  inline void set_name(const char *name)
   {
 #if defined(__linux__)
-    prctl(PR_SET_NAME, name);
+    // Linux prctl: max 15 printable chars + null terminator
+    prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0);
 #elif defined(__APPLE__)
+    // macOS pthread_setname_np: max 63 chars, targets calling thread
     pthread_setname_np(name);
+#elif defined(_WIN32)
+    // Windows 10 (1607+): expects wchar_t string
+    std::size_t size = std::strlen(name) + 1;
+    wchar_t* wname = new wchar_t[size];
+    std::mbstowcs(wname, name, size);
+    SetThreadDescription(GetCurrentThread(), wname);
+    delete[] wname;
 #endif
   }
 }

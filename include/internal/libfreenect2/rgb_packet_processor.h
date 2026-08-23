@@ -29,9 +29,7 @@
 #ifndef RGB_PACKET_PROCESSOR_H_
 #define RGB_PACKET_PROCESSOR_H_
 
-#include <stddef.h>
 #include <stdint.h>
-#include <memory>
 
 #include <libfreenect2/config.h>
 #include <libfreenect2/frame_listener.hpp>
