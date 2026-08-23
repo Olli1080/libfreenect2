@@ -24,6 +24,7 @@ add_library(freenect2_audio)
 target_sources(freenect2_audio PRIVATE
   audio_capture.cpp
   audio_ring_buffer.cpp
+  doa.cpp
 )
 
 freenect2_setup_backend_library(freenect2_audio)
@@ -41,6 +42,11 @@ target_include_directories(freenect2_audio PUBLIC
   ${PROJECT_BINARY_DIR}
 )
 
+# DoaEstimator (doa.cpp) uses single-precision FFTW3 for GCC-PHAT
+# cross-correlation and delay-and-sum beamforming, matching AudioFrame's
+# native float samples (no double<->float conversion needed).
+find_package(FFTW3f CONFIG REQUIRED)
+
 target_link_libraries(freenect2_audio
-  PRIVATE freenect2_logging freenect2 libusb::libusb-1.0
+  PRIVATE freenect2_logging freenect2 libusb::libusb-1.0 FFTW3::fftw3f
 )

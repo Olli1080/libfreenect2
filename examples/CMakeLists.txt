@@ -78,5 +78,16 @@ if(BUILD_PCL_EXAMPLE)
   target_link_libraries(PCLPointCloud PRIVATE freenect2 ${PCL_LIBRARIES})
 
   install(TARGETS PCLPointCloud DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+  # --- PCL Point Cloud + Direction-of-Arrival Example ---
+  if(TARGET freenect2_audio)
+    add_executable(PCLPointCloudAudio PCLPointCloudAudio.cpp)
+    target_compile_features(PCLPointCloudAudio PRIVATE cxx_std_17)
+    target_include_directories(PCLPointCloudAudio PRIVATE ${PCL_INCLUDE_DIRS})
+    target_compile_definitions(PCLPointCloudAudio PRIVATE ${PCL_DEFINITIONS})
+    target_link_libraries(PCLPointCloudAudio PRIVATE freenect2 freenect2_audio ${PCL_LIBRARIES})
+
+    install(TARGETS PCLPointCloudAudio DESTINATION ${CMAKE_INSTALL_BINDIR})
+  endif()
 endif()
 

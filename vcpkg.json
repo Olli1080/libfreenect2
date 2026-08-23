@@ -41,6 +41,12 @@
           "features": ["visualization"]
         }
       ]
+    },
+    "audio": {
+      "description": "Enable Kinect v2 microphone array direction-of-arrival/beamforming DSP",
+      "dependencies": [
+        "fftw3"
+      ]
     }
   }
 }
