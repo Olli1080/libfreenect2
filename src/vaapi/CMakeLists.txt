@@ -1,4 +1,4 @@
-# src/vaapi/CMakeLists.txt — Intel VA-API RGB processing backend (deprecated)
+# src/vaapi/CMakeLists.txt — Intel VA-API hardware JPEG decode backend (Linux, off by default)
 
 add_library(freenect2_vaapi)
 

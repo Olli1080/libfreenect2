@@ -61,7 +61,7 @@ It has been reported to work for up to 5 devices on a high-end PC using multiple
 * OpenGL depth processing: OpenGL 3.1+ (Windows, Linux, Mac OS X). OpenGL ES is not supported at the moment.
 * OpenCL depth processing: OpenCL 1.1
 * CUDA depth processing: CUDA 11+ (CUDA Toolkit 11.x or newer)
-* VAAPI JPEG decoding: Intel (minimum Ivy Bridge or newer) and Linux only (deprecated, use TurboJPEG instead)
+* VAAPI JPEG decoding: Intel (minimum Ivy Bridge or newer) and Linux only, optional hardware-accelerated alternative to TurboJPEG, off by default
 * VideoToolbox JPEG decoding: macOS only
 * OpenNI2 integration: OpenNI2 2.2.0.33
 
@@ -221,7 +221,7 @@ Use your favorite package managers (brew, ports, etc.) to install most if not al
     - Intel/AMD GPU: install your GPU vendor's OpenCL drivers and `opencl-headers`.
     - Verify: install `clinfo` to verify your OpenCL stack.
 * Install CUDA (optional, Nvidia only): Follow https://developer.nvidia.com/cuda-downloads.
-* Install VAAPI (optional, deprecated): `sudo apt-get install libva-dev libjpeg-dev`
+* Install VAAPI (optional, Intel GPU hardware JPEG decode): `sudo apt-get install libva-dev libjpeg-dev`
 * Install OpenNI2 (optional): `sudo apt-get install libopenni2-dev`
 * Build
     ```

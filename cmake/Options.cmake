@@ -15,7 +15,7 @@ option(ENABLE_PROFILING "Collect profiling stats (memory consuming)" OFF)
 option(ENABLE_OPENCL "Enable OpenCL depth processing" ON)
 option(ENABLE_CUDA "Enable CUDA depth processing" ON)
 option(ENABLE_OPENGL "Enable OpenGL depth processing + viewer" ON)
-option(ENABLE_VAAPI "Enable Intel VA-API JPEG decode (Linux, deprecated)" OFF)
+option(ENABLE_VAAPI "Enable Intel VA-API hardware JPEG decode (Linux, off by default -- requires libva + an Intel GPU)" OFF)
 option(ENABLE_AUDIO "Enable Kinect v2 microphone array capture" ON)
 option(ENABLE_VULKAN "Enable Vulkan depth processing" ON)
 
@@ -92,10 +92,17 @@ if(ENABLE_PROFILING)
   add_compile_definitions(LIBFREENECT2_WITH_PROFILING=1)
 endif()
 
-# --- VAAPI Deprecation Warning ---
-if(ENABLE_VAAPI)
-  message(DEPRECATION "ENABLE_VAAPI is deprecated. The VAAPI backend uses old VA 0.x API. Use TurboJPEG instead.")
-endif()
+# Note: there used to be a deprecation warning here claiming the VAAPI
+# backend "uses old VA 0.x API" -- removed after actually reading
+# src/vaapi/vaapi_rgb_packet_processor.cpp: it uses vaGetDisplayDRM() +
+# va/va_drm.h (the DRM render-node path, current since ~libva 1.1) and the
+# VAProfileJPEGBaseline/VAEntrypointVLD JPEG baseline buffers (stable since
+# ~libva 1.2-1.4), not anything from the pre-1.0 "0.x" API generation. The
+# claim doesn't match the code (last functionally touched in 2016, per git
+# history) and couldn't be verified against a real libva install from this
+# session either way, so it's been removed rather than left standing
+# unverified. TurboJPEG remains the always-available fallback regardless
+# (see getDefaultRgbPacketProcessor() in src/packet_pipeline.cpp).
 
 # --- Policies ---
 if(POLICY CMP0042)
