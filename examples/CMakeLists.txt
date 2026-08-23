@@ -136,6 +136,17 @@ if(BUILD_ONNX_EXAMPLES)
   target_link_libraries(ONNXPoseEstimation PRIVATE freenect2 onnx_common)
   install(TARGETS ONNXPoseEstimation DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+  # Two-stage MediaPipe hand tracking (palm detector + 21-point landmark
+  # model) -- ported from opencv/opencv_zoo's reference implementations, see
+  # ONNXHandTracking.cpp's file comment. Own translation unit (not folded
+  # into onnx_common) since its preprocessing/coordinate-mapping is entirely
+  # MediaPipe-specific (NHWC, black padding) and would be actively wrong if
+  # confused with the YOLOv8 helpers.
+  add_executable(ONNXHandTracking ONNXHandTracking.cpp)
+  target_compile_features(ONNXHandTracking PRIVATE cxx_std_17)
+  target_link_libraries(ONNXHandTracking PRIVATE freenect2 onnx_common)
+  install(TARGETS ONNXHandTracking DESTINATION ${CMAKE_INSTALL_BINDIR})
+
   # --- Optional: auto-download official Ultralytics .pt weights and export
   # them to ONNX via a local Python venv. Off by default -- this pulls in a
   # full Python + PyTorch toolchain (~2GB), which is a lot to impose on
@@ -242,6 +253,44 @@ if(BUILD_ONNX_EXAMPLES)
           message(STATUS "  ${ONNX_MODELS_DIR}/yolov8n-pose.onnx")
         endif()
       endif()
+    endif()
+
+    # MediaPipe hand-tracking models: opencv/opencv_zoo hosts these as
+    # ready-to-use .onnx directly (Apache-2.0), unlike Ultralytics' .pt-only
+    # distribution above -- no Python/PyTorch export step needed here.
+    set(OPENCV_ZOO_BASE "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models")
+
+    if(NOT EXISTS "${ONNX_MODELS_DIR}/palm_detection_mediapipe_2023feb.onnx")
+      message(STATUS "Downloading palm_detection_mediapipe_2023feb.onnx (opencv_zoo, ~3.9 MB)...")
+      file(DOWNLOAD "${OPENCV_ZOO_BASE}/palm_detection_mediapipe/palm_detection_mediapipe_2023feb.onnx"
+        "${ONNX_MODELS_DIR}/palm_detection_mediapipe_2023feb.onnx"
+        EXPECTED_HASH SHA256=78ff51c38496b7fc8b8ebdb6cc8c1abb02fa6c38427c6848254cdaba57fcce7c
+        STATUS _palm_dl_status)
+      list(GET _palm_dl_status 0 _palm_dl_code)
+      if(NOT _palm_dl_code EQUAL 0)
+        list(GET _palm_dl_status 1 _palm_dl_msg)
+        file(REMOVE "${ONNX_MODELS_DIR}/palm_detection_mediapipe_2023feb.onnx")
+        message(WARNING "Failed to download palm_detection_mediapipe_2023feb.onnx: ${_palm_dl_msg}")
+      endif()
+    endif()
+
+    if(NOT EXISTS "${ONNX_MODELS_DIR}/handpose_estimation_mediapipe_2023feb.onnx")
+      message(STATUS "Downloading handpose_estimation_mediapipe_2023feb.onnx (opencv_zoo, ~3.9 MB)...")
+      file(DOWNLOAD "${OPENCV_ZOO_BASE}/handpose_estimation_mediapipe/handpose_estimation_mediapipe_2023feb.onnx"
+        "${ONNX_MODELS_DIR}/handpose_estimation_mediapipe_2023feb.onnx"
+        EXPECTED_HASH SHA256=db0898ae717b76b075d9bf563af315b29562e11f8df5027a1ef07b02bef6d81c
+        STATUS _handpose_dl_status)
+      list(GET _handpose_dl_status 0 _handpose_dl_code)
+      if(NOT _handpose_dl_code EQUAL 0)
+        list(GET _handpose_dl_status 1 _handpose_dl_msg)
+        file(REMOVE "${ONNX_MODELS_DIR}/handpose_estimation_mediapipe_2023feb.onnx")
+        message(WARNING "Failed to download handpose_estimation_mediapipe_2023feb.onnx: ${_handpose_dl_msg}")
+      endif()
+    endif()
+
+    if(EXISTS "${ONNX_MODELS_DIR}/palm_detection_mediapipe_2023feb.onnx" AND EXISTS "${ONNX_MODELS_DIR}/handpose_estimation_mediapipe_2023feb.onnx")
+      message(STATUS "  ${ONNX_MODELS_DIR}/palm_detection_mediapipe_2023feb.onnx")
+      message(STATUS "  ${ONNX_MODELS_DIR}/handpose_estimation_mediapipe_2023feb.onnx")
     endif()
   endif()
 endif()
