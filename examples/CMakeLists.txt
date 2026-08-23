@@ -67,6 +67,22 @@ if(TARGET freenect2_audio)
   install(TARGETS AudioVideoSync DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
+# --- Vulkan Backend Phase 1 Verification Tool ---
+# Not a permanent example app -- see "Add a Vulkan depth-processing backend"
+# plan. Compares VulkanDepthPacketProcessor's stage-1 output against
+# OpenCLDepthPacketProcessor's for the same real captured raw depth packet.
+if(TARGET freenect2_vulkan AND TARGET freenect2_opencl)
+  add_executable(VulkanStage1Verify VulkanStage1Verify.cpp)
+  target_compile_features(VulkanStage1Verify PRIVATE cxx_std_17)
+  target_include_directories(VulkanStage1Verify PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/internal
+    ${PROJECT_BINARY_DIR}/freenect2_opencl
+    ${PROJECT_BINARY_DIR}/freenect2_vulkan
+  )
+  target_link_libraries(VulkanStage1Verify PRIVATE freenect2 freenect2_opencl freenect2_vulkan)
+endif()
+
 # --- PCL Point Cloud Example ---
 if(BUILD_PCL_EXAMPLE)
   find_package(PCL REQUIRED COMPONENTS common visualization)

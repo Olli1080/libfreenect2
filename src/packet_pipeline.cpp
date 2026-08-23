@@ -43,6 +43,9 @@
 #include <internal/cuda/cuda_depth_packet_processor.h>
 #include <internal/cuda/cuda_kde_depth_packet_processor.h>
 #endif
+#ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
+#include <internal/vulkan/vulkan_depth_packet_processor.h>
+#endif
 #ifdef LIBFREENECT2_WITH_VT_SUPPORT
 #include <internal/vt/vt_rgb_packet_processor.h>
 #endif
@@ -141,6 +144,15 @@ OpenGLPacketPipeline::OpenGLPacketPipeline(void *parent_opengl_context, bool deb
 
 OpenGLPacketPipeline::~OpenGLPacketPipeline() { }
 #endif // LIBFREENECT2_WITH_OPENGL_SUPPORT
+
+#ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
+VulkanPacketPipeline::VulkanPacketPipeline(const int deviceId) : deviceId(deviceId)
+{
+  comp_->initialize(getDefaultRgbPacketProcessor(), std::make_unique<VulkanDepthPacketProcessor>(deviceId));
+}
+
+VulkanPacketPipeline::~VulkanPacketPipeline() { }
+#endif // LIBFREENECT2_WITH_VULKAN_SUPPORT
 
 
 #ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT

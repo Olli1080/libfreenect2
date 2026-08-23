@@ -143,6 +143,16 @@ if(ENABLE_CUDA)
   endif()
 endif()
 
+# --- Vulkan Backend ---
+if(ENABLE_VULKAN)
+  find_package(Vulkan QUIET)
+  if(Vulkan_FOUND)
+    add_subdirectory(vulkan)
+    target_link_libraries(freenect2 PRIVATE freenect2_vulkan)
+    set(LIBFREENECT2_WITH_VULKAN_SUPPORT 1 CACHE INTERNAL "Vulkan supported")
+  endif()
+endif()
+
 # --- VAAPI Backend (deprecated) ---
 if(LIBFREENECT2_WITH_VAAPI_SUPPORT)
   add_subdirectory(vaapi)

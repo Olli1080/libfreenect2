@@ -15,6 +15,7 @@ option(ENABLE_CUDA "Enable CUDA depth processing" ON)
 option(ENABLE_OPENGL "Enable OpenGL depth processing + viewer" ON)
 option(ENABLE_VAAPI "Enable Intel VA-API JPEG decode (Linux, deprecated)" OFF)
 option(ENABLE_AUDIO "Enable Kinect v2 microphone array capture" ON)
+option(ENABLE_VULKAN "Enable Vulkan depth processing" ON)
 
 # --- vcpkg Feature Mapping ---
 if(ENABLE_OPENCL)
@@ -35,6 +36,10 @@ endif()
 
 if(ENABLE_AUDIO)
   list(APPEND VCPKG_MANIFEST_FEATURES "audio")
+endif()
+
+if(ENABLE_VULKAN)
+  list(APPEND VCPKG_MANIFEST_FEATURES "vulkan")
 endif()
 
 if(BUILD_PCL_EXAMPLE)

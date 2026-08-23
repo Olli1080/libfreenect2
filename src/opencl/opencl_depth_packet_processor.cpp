@@ -33,6 +33,7 @@
 
 #include <sstream>
 #include <memory>
+#include <cstring>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -222,6 +223,10 @@ public:
   cl::Buffer buf_edge_test;
   cl::Buffer buf_depth;
   cl::Buffer buf_ir_sum;
+
+  // Debug-only stage-1 verification capture (see header comment).
+  bool debugCaptureStage1 = false;
+  std::vector<float> debug_a_, debug_b_, debug_n_, debug_ir_;
   cl::Buffer buf_filtered;
 
   bool deviceInitialized;
@@ -589,6 +594,36 @@ public:
     CHECK_CL_RETURN(eventReadIr.wait());
     CHECK_CL_RETURN(eventReadDepth.wait());
 
+    if (debugCaptureStage1)
+    {
+      // cl_float3 is host-padded to 16 bytes (4 floats) per pixel; strip the
+      // padding down to a dense 3-floats-per-pixel layout matching Vulkan's
+      // debugStage1A/B/N() (see vulkan_depth_packet_processor.cpp), so the
+      // verification tool can diff both sides directly.
+      std::vector<float> padded_a(IMAGE_SIZE * 4), padded_b(IMAGE_SIZE * 4), padded_n(IMAGE_SIZE * 4);
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_a, CL_TRUE, 0, buf_a_size, padded_a.data()));
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_b, CL_TRUE, 0, buf_b_size, padded_b.data()));
+      CHECK_CL_RETURN(queue.enqueueReadBuffer(buf_n, CL_TRUE, 0, buf_n_size, padded_n.data()));
+
+      debug_a_.resize(IMAGE_SIZE * 3);
+      debug_b_.resize(IMAGE_SIZE * 3);
+      debug_n_.resize(IMAGE_SIZE * 3);
+      debug_ir_.resize(IMAGE_SIZE);
+      for (size_t i = 0; i < IMAGE_SIZE; ++i)
+      {
+        debug_a_[i * 3 + 0] = padded_a[i * 4 + 0];
+        debug_a_[i * 3 + 1] = padded_a[i * 4 + 1];
+        debug_a_[i * 3 + 2] = padded_a[i * 4 + 2];
+        debug_b_[i * 3 + 0] = padded_b[i * 4 + 0];
+        debug_b_[i * 3 + 1] = padded_b[i * 4 + 1];
+        debug_b_[i * 3 + 2] = padded_b[i * 4 + 2];
+        debug_n_[i * 3 + 0] = padded_n[i * 4 + 0];
+        debug_n_[i * 3 + 1] = padded_n[i * 4 + 1];
+        debug_n_[i * 3 + 2] = padded_n[i * 4 + 2];
+      }
+      std::memcpy(debug_ir_.data(), ir_frame->data, IMAGE_SIZE * sizeof(float));
+    }
+
 #ifdef LIBFREENECT2_WITH_PROFILING_CL
     if(count == 0)
     {
@@ -826,6 +861,16 @@ void OpenCLDepthPacketProcessor::process(const DepthPacket &packet)
     impl_->newDepthFrame();
   }
 }
+
+void OpenCLDepthPacketProcessor::enableStage1DebugCapture(bool enable)
+{
+  impl_->debugCaptureStage1 = enable;
+}
+
+const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1A() const { return impl_->debug_a_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1B() const { return impl_->debug_b_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1N() const { return impl_->debug_n_; }
+const std::vector<float> &OpenCLDepthPacketProcessor::debugStage1Ir() const { return impl_->debug_ir_; }
 
 Allocator *OpenCLDepthPacketProcessor::getAllocator()
 {

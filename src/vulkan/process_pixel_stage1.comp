@@ -1,0 +1,150 @@
+// This file is part of the OpenKinect Project. http://www.openkinect.org
+//
+// Copyright (c) 2014 individual OpenKinect contributors. See the CONTRIB file
+// for details.
+//
+// This code is licensed to you under the terms of the Apache License, version
+// 2.0, or, at your option, the terms of the GNU General Public License,
+// version 2.0. See the APACHE20 and GPL2 files for the text of the licenses,
+// or the following URLs:
+// http://www.apache.org/licenses/LICENSE-2.0
+// http://www.gnu.org/licenses/gpl-2.0.txt
+//
+// If you redistribute this file in source form, modified or unmodified, you
+// may:
+//   1) Leave this header intact and distribute it under the same terms,
+//      accompanying it with the APACHE20 and GPL20 files, or
+//   2) Delete the Apache 2.0 clause and accompany it with the GPL2 file, or
+//   3) Delete the GPL v2 clause and accompany it with the APACHE20 file
+// In all cases you must keep the copyright notice intact and include a copy
+// of the CONTRIB file.
+//
+// Binary distributions must follow the binary distribution requirements of
+// either License.
+//
+// Ported from src/opencl/opencl_depth_packet_processor.cl's
+// processPixelStage1/decodePixelMeasurement kernels -- same algorithm, GLSL
+// instead of OpenCL C. Notable translation points, verified against the
+// original rather than assumed:
+//  - float3 -> vec3
+//  - select(a, b, cond) -> mix(a, b, cond) (GLSL's bvec-selector mix() is
+//    the direct equivalent)
+//  - sincos(x, &c) -> separate sin(x)/cos(x) calls (no combined intrinsic)
+//  - kernel args -> buffer blocks (arrays) + push constants (scalars, was
+//    baked in via OpenCL's "-D NAME=value" compile options, see
+//    generateOptions() in opencl_depth_packet_processor.cpp)
+//  - ushort/short 16-bit buffers -> packed as uint on the host side (GLSL
+//    has no native 16-bit buffer type without an optional extension) and
+//    unpacked here via readUShort()/readShort()
+
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) readonly buffer Lut11To16 { uint lut11to16_packed[]; };
+layout(set = 0, binding = 1) readonly buffer ZTable { float z_table[]; };
+layout(set = 0, binding = 2) readonly buffer P0Table { vec4 p0_table[]; }; // .xyz used, .w padding
+layout(set = 0, binding = 3) readonly buffer RawData { uint data_packed[]; };
+
+layout(set = 0, binding = 4) writeonly buffer AOut { vec4 a_out[]; };
+layout(set = 0, binding = 5) writeonly buffer BOut { vec4 b_out[]; };
+layout(set = 0, binding = 6) writeonly buffer NOut { vec4 n_out[]; };
+layout(set = 0, binding = 7) writeonly buffer IrOut { float ir_out[]; };
+
+// vec4 (not vec3) for phase/ab_multiplier_per_frq deliberately -- GLSL's
+// std430 packing does NOT pad a scalar after a vec3 the way the host-side
+// C++ struct does (each field there is pre-padded to 16 bytes), so a
+// straight vec3 here silently misaligned ab_multiplier/ab_output_multiplier
+// by 4 bytes, corrupting only ir_out (the sole reader of those two fields --
+// a/b/n never touch them, which is why they matched a real-hardware
+// numeric comparison against OpenCL's stage 1 while ir_out didn't).
+layout(push_constant) uniform PushConstants
+{
+  vec4 phase; // PHASE_IN_RAD0..2, .xyz used
+  vec4 ab_multiplier_per_frq; // .xyz used
+  float ab_multiplier;
+  float ab_output_multiplier;
+} pc;
+
+const uint BFI_BITMASK = 0x180u;
+
+uint readUShort(uint idx)
+{
+  uint word = data_packed[idx >> 1];
+  return (idx & 1u) == 0u ? (word & 0xFFFFu) : (word >> 16u);
+}
+
+// lut11to16 entries are signed 16-bit; manual sign-extension since they're
+// stored packed as plain uint words (see file-level comment).
+float readLut(uint idx)
+{
+  uint word = lut11to16_packed[idx >> 1];
+  uint raw = (idx & 1u) == 0u ? (word & 0xFFFFu) : (word >> 16u);
+  int signed_raw = raw >= 32768u ? int(raw) - 65536 : int(raw);
+  return float(signed_raw);
+}
+
+float decodePixelMeasurement(uint sub, uint x, uint y)
+{
+  uint row_idx = (424u * sub + y) * 352u;
+  uint idx = (((x >> 2u) + ((x << 7u) & BFI_BITMASK)) * 11u);
+
+  uint col_idx = idx >> 4u;
+  uint upper_bytes = idx & 15u;
+  uint lower_bytes = 16u - upper_bytes;
+
+  uint data_idx0 = row_idx + col_idx;
+  uint data_idx1 = row_idx + col_idx + 1u;
+
+  if (x < 1u || x > 510u || col_idx > 352u)
+    return readLut(0u);
+
+  uint v0 = readUShort(data_idx0);
+  uint v1 = readUShort(data_idx1);
+  uint combined = ((v0 >> upper_bytes) | (v1 << lower_bytes)) & 2047u;
+  return readLut(combined);
+}
+
+void main()
+{
+  uint i = gl_GlobalInvocationID.x;
+  if (i >= 512u * 424u)
+    return;
+
+  uint x = i % 512u;
+  uint y = i / 512u;
+
+  uint y_tmp = 423u - y;
+  uint y_in = (y_tmp < 212u) ? (y_tmp + 212u) : (423u - y_tmp);
+
+  bool invalid = (0.0 >= z_table[i]);
+  vec3 p0 = p0_table[i].xyz;
+
+  vec3 p0x_cos = cos(pc.phase.xyz + vec3(p0.x));
+  vec3 p0x_sin = -sin(pc.phase.xyz + vec3(p0.x));
+  vec3 p0y_cos = cos(pc.phase.xyz + vec3(p0.y));
+  vec3 p0y_sin = -sin(pc.phase.xyz + vec3(p0.y));
+  vec3 p0z_cos = cos(pc.phase.xyz + vec3(p0.z));
+  vec3 p0z_sin = -sin(pc.phase.xyz + vec3(p0.z));
+
+  vec3 v0 = vec3(decodePixelMeasurement(0u, x, y_in), decodePixelMeasurement(1u, x, y_in), decodePixelMeasurement(2u, x, y_in));
+  vec3 v1 = vec3(decodePixelMeasurement(3u, x, y_in), decodePixelMeasurement(4u, x, y_in), decodePixelMeasurement(5u, x, y_in));
+  vec3 v2 = vec3(decodePixelMeasurement(6u, x, y_in), decodePixelMeasurement(7u, x, y_in), decodePixelMeasurement(8u, x, y_in));
+
+  vec3 a = vec3(dot(v0, p0x_cos), dot(v1, p0y_cos), dot(v2, p0z_cos)) * pc.ab_multiplier_per_frq.xyz;
+  vec3 b = vec3(dot(v0, p0x_sin), dot(v1, p0y_sin), dot(v2, p0z_sin)) * pc.ab_multiplier_per_frq.xyz;
+
+  a = invalid ? vec3(0.0) : a;
+  b = invalid ? vec3(0.0) : b;
+  vec3 n = sqrt(a * a + b * b);
+
+  bool saturated = any(equal(v0, vec3(32767.0))) || any(equal(v1, vec3(32767.0))) || any(equal(v2, vec3(32767.0)));
+
+  a_out[i] = vec4(saturated ? vec3(0.0) : a, 0.0);
+  b_out[i] = vec4(saturated ? vec3(0.0) : b, 0.0);
+  n_out[i] = vec4(n, 0.0);
+
+  vec3 n_for_ir = saturated ? vec3(65535.0) : n;
+  float ir_dot = dot(n_for_ir, vec3(0.333333333 * pc.ab_multiplier * pc.ab_output_multiplier));
+  ir_out[i] = min(ir_dot, 65535.0);
+}

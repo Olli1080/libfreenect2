@@ -103,6 +103,24 @@ public:
 };
 #endif // LIBFREENECT2_WITH_OPENGL_SUPPORT
 
+#ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
+/** Pipeline with Vulkan depth processing. Phase 1 only (see
+ * VulkanDepthPacketProcessor) -- stage 1 of the depth-decode algorithm is
+ * wired up, the remaining stages are not yet, so this does not produce a
+ * usable depth stream through the normal FrameListener path yet. Exists at
+ * this point in the plan for verification purposes (constructing a real
+ * Freenect2Device against it is the most direct way to get a real captured
+ * raw packet + tables to test the Vulkan compute pipeline against). */
+class LIBFREENECT2_API VulkanPacketPipeline : public PacketPipeline
+{
+protected:
+  const int deviceId;
+public:
+  VulkanPacketPipeline(const int deviceId = -1);
+  ~VulkanPacketPipeline() noexcept override;
+};
+#endif // LIBFREENECT2_WITH_VULKAN_SUPPORT
+
 #ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
 /** Pipeline with OpenCL depth processing. */
 class LIBFREENECT2_API OpenCLPacketPipeline : public PacketPipeline
