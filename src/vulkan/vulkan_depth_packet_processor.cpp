@@ -24,15 +24,18 @@
  * either License.
  */
 
-/** @file vulkan_depth_packet_processor.cpp Phase 1 Vulkan depth packet
- * processor -- processPixelStage1 only, see the header's file-level comment.
+/** @file vulkan_depth_packet_processor.cpp Vulkan depth packet processor,
+ * see the header's file-level comment for what's implemented.
  *
- * Deliberately uses HOST_VISIBLE|HOST_COHERENT memory with persistent
- * mapping for every buffer (no staging buffers, no device-local memory, no
- * VMA yet) -- simplicity over performance for this phase, since the goal is
- * proving the compute plumbing (buffer upload, descriptor sets, push
- * constants, dispatch, readback) is correct, not making it fast. Revisit
- * once Phase 1 is verified.
+ * Every buffer is HOST_VISIBLE|HOST_COHERENT with persistent mapping (no
+ * staging buffers, no VMA) -- simplicity over raw throughput, since the
+ * primary goal was proving the compute plumbing (buffer upload, descriptor
+ * sets, push constants, dispatch, readback) correct first. findMemoryType()
+ * does prefer a memory type that's *also* DEVICE_LOCAL when one exists
+ * (confirmed present on this session's GPU via vulkaninfo -- Resizable BAR
+ * exposes the whole VRAM heap as host-visible too), so on such hardware
+ * this already avoids routing every GPU-side buffer access over PCIe to
+ * system RAM without needing an explicit staging-buffer upload path.
  */
 
 #include <internal/vulkan/vulkan_depth_packet_processor.h>
@@ -165,7 +168,7 @@ public:
   std::vector<float> debugDepth, debugIrSum, debugFiltered;
 
   bool init(int deviceId);
-  VulkanBufferResource createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage);
+  VulkanBufferResource createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, bool preferDeviceLocal = true);
   bool createComputeStage(ComputeStage &stage, std::string_view spvResourceName,
                            const std::vector<VulkanBufferResource *> &buffers, uint32_t pushConstantBytes);
   bool createAltDescriptorSet(ComputeStage &stage, const std::vector<VulkanBufferResource *> &buffers);
@@ -177,7 +180,7 @@ public:
 
 namespace
 {
-uint32_t findMemoryType(vk::PhysicalDevice phys, uint32_t typeBits, vk::MemoryPropertyFlags props)
+uint32_t findMemoryTypeExact(vk::PhysicalDevice phys, uint32_t typeBits, vk::MemoryPropertyFlags props)
 {
   vk::PhysicalDeviceMemoryProperties memProps = phys.getMemoryProperties();
   for (uint32_t i = 0; i < memProps.memoryTypeCount; i++)
@@ -187,9 +190,30 @@ uint32_t findMemoryType(vk::PhysicalDevice phys, uint32_t typeBits, vk::MemoryPr
   }
   return UINT32_MAX;
 }
+
+// Prefer a memory type that also carries `preferred` flags (e.g.
+// eDeviceLocal on top of the required host-visible/coherent pair), falling
+// back to `required` alone if no such type exists. On discrete GPUs with
+// Resizable BAR (confirmed present here via vulkaninfo: the whole
+// device-local VRAM heap also has a host-visible+coherent memory type),
+// picking the device-local-and-host-visible type instead of the first
+// host-visible match keeps every buffer this backend uses fully GPU-local
+// instead of routing every GPU-side access over PCIe to system RAM --
+// which is what naively taking the first HOST_VISIBLE|HOST_COHERENT match
+// does, since that type is enumerated before the ReBAR one.
+uint32_t findMemoryType(vk::PhysicalDevice phys, uint32_t typeBits, vk::MemoryPropertyFlags required, vk::MemoryPropertyFlags preferred = {})
+{
+  if (preferred)
+  {
+    uint32_t idx = findMemoryTypeExact(phys, typeBits, required | preferred);
+    if (idx != UINT32_MAX)
+      return idx;
+  }
+  return findMemoryTypeExact(phys, typeBits, required);
+}
 } // namespace
 
-VulkanBufferResource VulkanDepthPacketProcessorImpl::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage)
+VulkanBufferResource VulkanDepthPacketProcessorImpl::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, bool preferDeviceLocal)
 {
   VulkanBufferResource res;
   res.size = size;
@@ -202,7 +226,8 @@ VulkanBufferResource VulkanDepthPacketProcessorImpl::createBuffer(vk::DeviceSize
 
   vk::MemoryRequirements memReq = device->getBufferMemoryRequirements(*res.buffer);
   vk::MemoryPropertyFlags hostProps = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-  uint32_t memType = findMemoryType(physicalDevice, memReq.memoryTypeBits, hostProps);
+  vk::MemoryPropertyFlags preferred = preferDeviceLocal ? vk::MemoryPropertyFlagBits::eDeviceLocal : vk::MemoryPropertyFlags{};
+  uint32_t memType = findMemoryType(physicalDevice, memReq.memoryTypeBits, hostProps, preferred);
 
   vk::MemoryAllocateInfo allocInfo{};
   allocInfo.allocationSize = memReq.size;
@@ -446,16 +471,26 @@ bool VulkanDepthPacketProcessorImpl::initTablesAndPipeline()
     aBuf = createBuffer(IMAGE_SIZE * sizeof(float) * 4, vk::BufferUsageFlagBits::eStorageBuffer);
     bBuf = createBuffer(IMAGE_SIZE * sizeof(float) * 4, vk::BufferUsageFlagBits::eStorageBuffer);
     nBuf = createBuffer(IMAGE_SIZE * sizeof(float) * 4, vk::BufferUsageFlagBits::eStorageBuffer);
-    irBuf = createBuffer(IMAGE_SIZE * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer);
+    // irBuf backs ir_frame->data and gets memcpy'd out to the CPU every
+    // single real frame (not just under debugCapture) -- unlike the other
+    // intermediate buffers, prefering a device-local memory type here would
+    // make that per-frame CPU read hit BAR-mapped VRAM instead of system
+    // RAM, which measured dramatically *worse* in practice (see the
+    // createBuffer() preferDeviceLocal comment).
+    irBuf = createBuffer(IMAGE_SIZE * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer, /*preferDeviceLocal=*/false);
 
     aFilteredBuf = createBuffer(IMAGE_SIZE * sizeof(float) * 4, vk::BufferUsageFlagBits::eStorageBuffer);
     bFilteredBuf = createBuffer(IMAGE_SIZE * sizeof(float) * 4, vk::BufferUsageFlagBits::eStorageBuffer);
     gaussianBuf = createBuffer(9 * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer);
     maxEdgeTestBuf = createBuffer(IMAGE_SIZE * sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer);
 
-    depthBuf = createBuffer(IMAGE_SIZE * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer);
+    // depthBuf/filteredBuf: same reasoning as irBuf -- one of the two backs
+    // depth_frame->data every real frame (whichever EnableEdgeAwareFilter
+    // selects, see runFullPipeline()), so neither should prefer
+    // device-local either.
+    depthBuf = createBuffer(IMAGE_SIZE * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer, /*preferDeviceLocal=*/false);
     irSumBuf = createBuffer(IMAGE_SIZE * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer);
-    filteredBuf = createBuffer(IMAGE_SIZE * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer);
+    filteredBuf = createBuffer(IMAGE_SIZE * sizeof(float), vk::BufferUsageFlagBits::eStorageBuffer, /*preferDeviceLocal=*/false);
 
     std::memcpy(gaussianBuf.mapped, params.gaussian_kernel, 9 * sizeof(float));
 
