@@ -1,6 +1,7 @@
 #include "onnx_common.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <numeric>
 
 #include <opencv2/imgproc.hpp>
@@ -8,19 +9,65 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include <io.h>
+#else
+#include <unistd.h>
 #endif
 
 namespace onnx_common
 {
 
-Ort::Env &getEnv()
-{
-  static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "libfreenect2-onnx-examples");
-  return env;
-}
-
 namespace
 {
+
+// onnxruntime.dll internally double-registers its own bundled ONNX operator
+// schemas at process-wide-registry init time (every "already registered
+// from" points at the exact same file/line as the "registering" one --
+// confirmed this is onnxruntime's own bug, not this project's, and it's
+// harmless: the registry still ends up correct, this is just noise from the
+// duplicate-registration attempts). It writes straight to the OS file
+// descriptor for stderr (verified: unaffected by redirecting stdout,
+// suppressed by redirecting stderr), not through std::cerr, so silencing it
+// means redirecting fd 2 itself for the duration of the one-time Ort::Env
+// init, not swapping std::cerr's stream buffer.
+class ScopedStderrSuppress
+{
+public:
+  ScopedStderrSuppress()
+  {
+    std::fflush(stderr);
+#ifdef _WIN32
+    saved_fd_ = _dup(_fileno(stderr));
+    FILE *null_file = nullptr;
+    freopen_s(&null_file, "NUL", "w", stderr);
+#else
+    saved_fd_ = dup(fileno(stderr));
+    std::freopen("/dev/null", "w", stderr);
+#endif
+  }
+
+  ~ScopedStderrSuppress()
+  {
+    std::fflush(stderr);
+    if (saved_fd_ >= 0)
+    {
+#ifdef _WIN32
+      _dup2(saved_fd_, _fileno(stderr));
+      _close(saved_fd_);
+#else
+      dup2(saved_fd_, fileno(stderr));
+      close(saved_fd_);
+#endif
+    }
+  }
+
+  ScopedStderrSuppress(const ScopedStderrSuppress &) = delete;
+  ScopedStderrSuppress &operator=(const ScopedStderrSuppress &) = delete;
+
+private:
+  int saved_fd_ = -1;
+};
+
 #ifdef _WIN32
 std::wstring toWide(const std::string &s)
 {
@@ -34,8 +81,22 @@ std::wstring toWide(const std::string &s)
 #endif
 } // namespace
 
+Ort::Env &getEnv()
+{
+  static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "libfreenect2-onnx-examples");
+  return env;
+}
+
 Ort::Session createSession(const std::string &model_path)
 {
+  // The schema-registration spam (see ScopedStderrSuppress's comment) turns
+  // out to fire lazily on first real API use -- verified via a temporary
+  // marker print that it happens somewhere inside this call, not at
+  // Ort::Env construction specifically and not at DLL-load/static-init
+  // time -- so the whole call needs to be inside the suppressed scope, not
+  // just getEnv().
+  ScopedStderrSuppress suppress;
+
   Ort::SessionOptions options;
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   // CPU execution provider only -- see the file header comment.
