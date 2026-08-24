@@ -16,6 +16,16 @@
  *
  * Usage: ONNXHandTracking --palm-model <path> --hand-model <path>
  *          [--palm-conf <0..1>] [--palm-iou <0..1>] [--hand-conf <0..1>]
+ *          [--min-depth <meters>] [--max-depth <meters>] [--max-hands <n>]
+ *
+ * Palm detection never runs on the raw full color frame: doing so crushes a
+ * distant hand's true pixel size below what the palm CNN can see (a ~9cm
+ * palm is ~10px in the 192x192 input at 1m, ~5px at 2m). Instead, an
+ * already-tracked hand gets a tight crop+upscale around its last known box
+ * each frame (see Track/enlargeAndClamp below), and a new hand is
+ * (re)acquired via the depth sensor (Registration/bigdepth) picking out
+ * plausible-distance blobs to crop around instead of scanning the whole
+ * frame.
  */
 
 #include <algorithm>
@@ -29,6 +39,7 @@
 
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
+#include <libfreenect2/registration.h>
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -44,7 +55,8 @@ const float kPi = 3.14159265358979323846f;
 void printUsage()
 {
   std::cerr << "Usage: ONNXHandTracking --palm-model <path> --hand-model <path> "
-               "[--palm-conf <0..1>] [--palm-iou <0..1>] [--hand-conf <0..1>]\n";
+               "[--palm-conf <0..1>] [--palm-iou <0..1>] [--hand-conf <0..1>] "
+               "[--min-depth <meters>] [--max-depth <meters>] [--max-hands <n>]\n";
 }
 
 // A 2-point axis-aligned box, [top-left, bottom-right] -- mirrors the
@@ -203,6 +215,37 @@ const cv::Point2f kPalmBoxShiftVector(0.0f, -0.4f);
 constexpr float kPalmBoxEnlargeFactor = 3.0f;
 const cv::Point2f kHandBoxShiftVector(0.0f, -0.1f);
 constexpr float kHandBoxEnlargeFactor = 1.65f;
+
+// --- Temporal tracking + depth-guided acquisition ------------------------
+// See Track/findDepthGuidedCandidates below kHandConnections for how these
+// are used: kTrackingCropMarginFactor governs the crop used to re-find an
+// already-tracked palm each frame (tight, cheap, ~1 palm-CNN pass/hand).
+// kHandFootprintMeters/kDepthCandidateMinCropSize/kDepthCandidateMaxCropSize
+// size the crop used to (re)acquire a NEW hand around a near-depth peak --
+// sized from the physical footprint at that peak's actual depth (via focal
+// length) rather than from a connected component's bounding box, which for
+// two hands joined to one torso -- especially likely at close range, where
+// more of the body falls within the depth window -- balloons back toward a
+// full-frame-sized crop (undoing the whole point) and only lets ONE hand
+// win the palm CNN's internal NMS.
+constexpr float kTrackingCropMarginFactor = 3.0f;
+constexpr int kTrackingCropMinSize = 100;
+constexpr int kMaxMissedFrames = 5;
+constexpr float kTrackOverlapIouThreshold = 0.3f;
+constexpr float kHandFootprintMeters = 0.35f; // hand + a bit of forearm
+constexpr int kDepthCandidateMinCropSize = 100;
+constexpr int kDepthCandidateMaxCropSize = 900; // hard cap regardless of depth
+// Fixed-range depth tolerance (mm, relative to the peak/seed pixel, not
+// neighbor-to-neighbor) for the flood-fill that suppresses a whole
+// near-uniform-depth surface around a peak in one go -- see the comment at
+// its call site in findDepthGuidedCandidates for why this matters.
+constexpr double kFloodDepthToleranceMm = 60.0;
+// Extra candidate peaks requested beyond the number of open hand slots --
+// needed because plenty of near-depth peaks (torso, face, shoulder) are
+// valid depth-range peaks but contain no hand at all; without headroom
+// those can burn through the whole candidate budget before a genuinely
+// separate second hand's peak is ever reached.
+constexpr int kDepthCandidateSearchHeadroom = 6;
 
 struct CropResult
 {
@@ -424,6 +467,39 @@ std::optional<HandResult> postprocessHand(const float *landmarks_raw, float conf
   return result;
 }
 
+// Runs the full stage-2 landmark model on `palm` and applies
+// hand_conf_threshold -- factored out so Step 2 in main() can require this
+// (not just the palm detector's own, looser confidence) before promoting a
+// depth-guided candidate to a Track. Without this gate, a palm-level false
+// positive (face, elbow, a fold of clothing -- the palm detector alone is
+// only run at 0.5 confidence by default) would permanently squat a hand
+// slot: it never draws (fails this stricter check down in main()'s display
+// loop), but Step 1 keeps re-confirming its own palm-level detection every
+// frame, so it never gets evicted either, silently blocking a genuinely
+// different hand from ever being acquired.
+std::optional<HandResult> runHandLandmarkStage(Ort::Session &hand_session, const char *const *hand_input_names,
+                                                const char *const *hand_output_names, Ort::MemoryInfo &mem_info,
+                                                const cv::Mat &bgrx, const PalmDetection &palm,
+                                                float hand_conf_threshold)
+{
+  HandPreprocessResult pre = preprocessForHand(bgrx, palm);
+
+  CV_Assert(pre.blob.isContinuous());
+  std::vector<float> tensor_data(pre.blob.ptr<float>(0),
+                                  pre.blob.ptr<float>(0) + static_cast<size_t>(kHandInputSize) * kHandInputSize * 3);
+
+  std::array<int64_t, 4> tensor_shape = {1, kHandInputSize, kHandInputSize, 3};
+  Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
+      mem_info, tensor_data.data(), tensor_data.size(), tensor_shape.data(), tensor_shape.size());
+
+  auto outputs = hand_session.Run(Ort::RunOptions{nullptr}, hand_input_names, &input_tensor, 1, hand_output_names, 3);
+  const float *landmarks_raw = outputs[0].GetTensorData<float>();
+  float conf = outputs[1].GetTensorData<float>()[0];
+  float handedness = outputs[2].GetTensorData<float>()[0];
+
+  return postprocessHand(landmarks_raw, conf, handedness, pre, hand_conf_threshold);
+}
+
 // Standard MediaPipe 21-point hand skeleton connections.
 const std::array<std::pair<int, int>, 21> kHandConnections = {{
     {0, 1}, {1, 2}, {2, 3}, {3, 4},
@@ -432,6 +508,131 @@ const std::array<std::pair<int, int>, 21> kHandConnections = {{
     {9, 13}, {13, 14}, {14, 15}, {15, 16},
     {13, 17}, {17, 18}, {18, 19}, {19, 20},
     {0, 17}}};
+
+// A tracked hand's last known tight palm box (full-frame coords). Driven
+// purely off detectPalms() re-run on a crop around this box each frame --
+// no identity/re-id, just nearest-box continuity (see main()'s loop).
+struct Track
+{
+  cv::Rect box;
+  int missed_frames = 0;
+};
+
+// Shifts a PalmDetection's box + all 7 landmarks by `offset` -- used to map
+// a detection found on a crop (bgrx(cropRect)) back to full-frame
+// coordinates, since detectPalms() treats whatever Mat it's given as "the
+// whole image" (see its own comment above).
+void offsetPalmDetection(PalmDetection &palm, cv::Point2f offset)
+{
+  palm.box += offset;
+  for (cv::Point2f &p : palm.landmarks)
+    p += offset;
+}
+
+float iou(const cv::Rect &a, const cv::Rect &b)
+{
+  cv::Rect inter = a & b;
+  if (inter.area() <= 0)
+    return 0.0f;
+  return static_cast<float>(inter.area()) / static_cast<float>(a.area() + b.area() - inter.area());
+}
+
+// Center-enlarges `box` by `margin_factor`, with a minimum-size floor (so a
+// tiny/tight box still yields a useful crop), clamped to frame bounds.
+cv::Rect enlargeAndClamp(const cv::Rect &box, float margin_factor, int min_size, cv::Size frame_size)
+{
+  cv::Point2f center(box.x + box.width * 0.5f, box.y + box.height * 0.5f);
+  float w = std::max(box.width * margin_factor, static_cast<float>(min_size));
+  float h = std::max(box.height * margin_factor, static_cast<float>(min_size));
+  cv::Rect r(static_cast<int>(center.x - w * 0.5f), static_cast<int>(center.y - h * 0.5f),
+             static_cast<int>(w), static_cast<int>(h));
+  return r & cv::Rect(0, 0, frame_size.width, frame_size.height);
+}
+
+// Finds candidate crop regions for (re)acquiring a hand via the depth
+// sensor instead of scanning the full color frame. Repeatedly takes the
+// globally nearest in-range depth pixel as a candidate peak (a hand reaching
+// toward the camera is normally the closest thing in the scene at that
+// location), sizes a crop around it from its actual depth (via
+// `focal_length_px` and `kHandFootprintMeters` -- closer peaks get smaller,
+// tighter crops; farther ones get larger), then masks out that crop's
+// footprint before looking for the next peak. That masking is what lets two
+// hands joined to one torso in the depth mask still surface as two separate
+// candidates instead of one oversized bounding box -- and since crop size
+// only depends on a peak's own depth (not blob extent), it can't balloon
+// toward full-frame size the way a connected-component bounding box does
+// when more of the body falls in range at close distance.
+//
+// `existing_tracks`' whole neighborhoods (same generous crop Step 1 uses to
+// re-track them, see main()) are excluded from the search entirely before
+// peak-picking starts, not merely checked after the fact: a single real
+// hand can easily have several of its own depth peaks (spread fingers,
+// wrist vs. palm can differ by well more than the flood-fill tolerance
+// below), so reactively filtering only the exact peak found would still let
+// an already-tracked hand's OTHER peaks resurface as spurious "new"
+// candidates and eat the whole search budget before a genuinely different
+// second hand's peak is ever reached.
+// `depth_mm`: CV_32F, millimeters, 0 = invalid, already in COLOR image space.
+std::vector<cv::Rect> findDepthGuidedCandidates(const cv::Mat &depth_mm,
+                                                 const std::vector<cv::Rect> &existing_tracks,
+                                                 float min_depth_m, float max_depth_m,
+                                                 float focal_length_px, int max_candidates)
+{
+  cv::Mat mask;
+  cv::inRange(depth_mm, min_depth_m * 1000.0f, max_depth_m * 1000.0f, mask);
+  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+  cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
+  cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
+
+  // Out-of-mask pixels pushed to +infinity so repeated minMaxLoc calls walk
+  // through successive near peaks as earlier ones get masked out below.
+  const float kInvalid = std::numeric_limits<float>::max();
+  cv::Mat search(depth_mm.size(), CV_32FC1, cv::Scalar(kInvalid));
+  depth_mm.copyTo(search, mask);
+
+  for (const cv::Rect &t : existing_tracks)
+  {
+    cv::Rect exclude = enlargeAndClamp(t, kTrackingCropMarginFactor, kTrackingCropMinSize,
+                                        cv::Size(depth_mm.cols, depth_mm.rows));
+    search(exclude).setTo(kInvalid);
+  }
+
+  std::vector<cv::Rect> candidates;
+  int max_iterations = max_candidates + 2;
+  for (int iter = 0; iter < max_iterations && static_cast<int>(candidates.size()) < max_candidates; ++iter)
+  {
+    double min_val;
+    cv::Point min_loc;
+    cv::minMaxLoc(search, &min_val, nullptr, &min_loc, nullptr);
+    if (min_val >= kInvalid)
+      break; // mask exhausted -- no more in-range depth left to consider
+
+    float depth_m = static_cast<float>(min_val) / 1000.0f;
+    float crop_size_f = focal_length_px * kHandFootprintMeters / std::max(depth_m, 0.1f);
+    int crop_size = std::clamp(static_cast<int>(crop_size_f), kDepthCandidateMinCropSize, kDepthCandidateMaxCropSize);
+
+    cv::Rect peak_box(min_loc.x - crop_size / 2, min_loc.y - crop_size / 2, crop_size, crop_size);
+    peak_box &= cv::Rect(0, 0, depth_mm.cols, depth_mm.rows);
+
+    // Suppress this peak regardless of whether it's kept below, so the next
+    // iteration is forced to look elsewhere. A fixed box alone isn't enough:
+    // a large near-uniform-depth surface (most commonly a torso) is very
+    // often the second-nearest peak after a hand, and nibbling it one small
+    // box at a time never finishes before the candidate budget runs out --
+    // reliably starving a genuinely separate, farther-away second hand
+    // regardless of how far apart the two hands actually are. Flood-filling
+    // from the peak within a tight, SEED-relative depth tolerance (fixed
+    // range, not neighbor-to-neighbor -- otherwise it can "walk" along a
+    // gradual arm/shoulder depth gradient right off the torso and swallow a
+    // real hand too) consumes that whole surface patch in one iteration.
+    search(peak_box).setTo(kInvalid);
+    cv::floodFill(search, min_loc, cv::Scalar(kInvalid), nullptr, cv::Scalar(kFloodDepthToleranceMm),
+                  cv::Scalar(kFloodDepthToleranceMm), 4 | cv::FLOODFILL_FIXED_RANGE);
+
+    candidates.push_back(peak_box);
+  }
+  return candidates;
+}
 
 } // namespace
 
@@ -442,6 +643,9 @@ int main(int argc, char **argv)
   float palm_conf_threshold = 0.5f;
   float palm_iou_threshold = 0.3f;
   float hand_conf_threshold = 0.8f;
+  float min_depth_m = 0.4f;
+  float max_depth_m = 3.5f;
+  int max_hands = 2;
 
   for (int i = 1; i < argc; ++i)
   {
@@ -456,6 +660,12 @@ int main(int argc, char **argv)
       palm_iou_threshold = std::stof(argv[++i]);
     else if (arg == "--hand-conf" && i + 1 < argc)
       hand_conf_threshold = std::stof(argv[++i]);
+    else if (arg == "--min-depth" && i + 1 < argc)
+      min_depth_m = std::stof(argv[++i]);
+    else if (arg == "--max-depth" && i + 1 < argc)
+      max_depth_m = std::stof(argv[++i]);
+    else if (arg == "--max-hands" && i + 1 < argc)
+      max_hands = std::stoi(argv[++i]);
     else
     {
       std::cerr << "Unknown argument: " << arg << "\n";
@@ -525,15 +735,104 @@ int main(int argc, char **argv)
 
   Ort::MemoryInfo mem_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
+  // Depth-in-color-space (bigdepth) drives findDepthGuidedCandidates() below
+  // -- undistorted/registered_frame are unused beyond being required
+  // apply() out-params (same pattern as Protonect.cpp).
+  libfreenect2::Registration registration(device->getIrCameraParams(), device->getColorCameraParams());
+  libfreenect2::Frame undistorted(512, 424, 4), registered_frame(512, 424, 4), bigdepth(1920, 1082, 4);
+  const float color_focal_length_px = device->getColorCameraParams().fx;
+  std::vector<Track> tracks;
+
   while (cv::getWindowProperty(window_name, cv::WND_PROP_VISIBLE) > 0)
   {
     libfreenect2::FrameMap frames;
     listener.waitForNewFrame(frames);
 
     libfreenect2::Frame *color = frames[libfreenect2::Frame::Color];
+    libfreenect2::Frame *depth = frames[libfreenect2::Frame::Depth];
     cv::Mat bgrx(color->height, color->width, CV_8UC4, color->data);
 
-    std::vector<PalmDetection> palms = detectPalms(palm_session, bgrx, palm_conf_threshold, palm_iou_threshold);
+    registration.apply(color, depth, &undistorted, &registered_frame, true, &bigdepth);
+    cv::Mat bigdepth_mat(bigdepth.height, bigdepth.width, CV_32FC1, bigdepth.data);
+    // bigdepth has one blank row top and bottom (1082 vs color's 1080 rows).
+    cv::Mat depth_color_space = bigdepth_mat.rowRange(1, 1 + bgrx.rows);
+
+    std::vector<PalmDetection> palms;
+
+    // Step 1: advance existing tracks -- crop tight around each track's last
+    // known box and re-run palm detection on just that crop, so a distant
+    // hand keeps getting full-detail treatment once found (see file header
+    // comment). Evict a track once it's gone unseen for kMaxMissedFrames.
+    for (auto it = tracks.begin(); it != tracks.end();)
+    {
+      cv::Rect crop_rect = enlargeAndClamp(it->box, kTrackingCropMarginFactor, kTrackingCropMinSize, bgrx.size());
+      std::vector<PalmDetection> found = detectPalms(palm_session, bgrx(crop_rect), palm_conf_threshold, palm_iou_threshold);
+
+      const PalmDetection *best = nullptr;
+      for (const PalmDetection &p : found)
+        if (!best || p.score > best->score)
+          best = &p;
+
+      if (best)
+      {
+        PalmDetection palm = *best;
+        offsetPalmDetection(palm, cv::Point2f(static_cast<float>(crop_rect.x), static_cast<float>(crop_rect.y)));
+        it->box = cv::Rect(palm.box);
+        it->missed_frames = 0;
+        palms.push_back(palm);
+        ++it;
+      }
+      else
+      {
+        ++it->missed_frames;
+        if (it->missed_frames > kMaxMissedFrames)
+          it = tracks.erase(it);
+        else
+          ++it;
+      }
+    }
+
+    // Step 2: while under max_hands, use the depth sensor to find candidate
+    // regions for a NEW hand (rather than re-scanning the full color frame)
+    // and try to acquire a track from each.
+    if (static_cast<int>(tracks.size()) < max_hands)
+    {
+      std::vector<cv::Rect> existing_boxes;
+      for (const Track &t : tracks)
+        existing_boxes.push_back(t.box);
+
+      int slots_left = max_hands - static_cast<int>(tracks.size());
+      std::vector<cv::Rect> candidates =
+          findDepthGuidedCandidates(depth_color_space, existing_boxes, min_depth_m, max_depth_m,
+                                     color_focal_length_px, slots_left + kDepthCandidateSearchHeadroom);
+
+      for (const cv::Rect &crop_rect : candidates)
+      {
+        if (static_cast<int>(tracks.size()) >= max_hands)
+          break;
+        std::vector<PalmDetection> found = detectPalms(palm_session, bgrx(crop_rect), palm_conf_threshold, palm_iou_threshold);
+        for (PalmDetection &palm : found)
+        {
+          offsetPalmDetection(palm, cv::Point2f(static_cast<float>(crop_rect.x), static_cast<float>(crop_rect.y)));
+          cv::Rect palm_box(palm.box);
+          bool dup = std::any_of(tracks.begin(), tracks.end(), [&](const Track &t)
+                                  { return iou(t.box, palm_box) > kTrackOverlapIouThreshold; });
+          if (dup)
+            continue;
+          // Require the landmark stage to confirm this too (see
+          // runHandLandmarkStage's comment) before committing a track --
+          // otherwise a palm-only false positive can permanently squat a
+          // hand slot without ever being visibly wrong.
+          if (!runHandLandmarkStage(hand_session, hand_input_names, hand_output_names, mem_info, bgrx, palm,
+                                     hand_conf_threshold))
+            continue;
+          tracks.push_back(Track{palm_box, 0});
+          palms.push_back(palm);
+          if (static_cast<int>(tracks.size()) >= max_hands)
+            break;
+        }
+      }
+    }
 
     cv::Mat display;
     cv::cvtColor(bgrx, display, cv::COLOR_BGRA2BGR);
