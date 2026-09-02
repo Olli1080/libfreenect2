@@ -341,8 +341,30 @@ void AudioCaptureImpl::stop()
 
   shutdown_ = true;
 
+  // pending_cancellations_ must be incremented here, once per transfer we
+  // actually ask libusb to cancel -- eventLoopMain()'s wait loop below
+  // (via event_thread_.join()) uses this count to know when every
+  // in-flight transfer has reached a terminal state. Before this fix, this
+  // loop never touched pending_cancellations_ at all (only
+  // handleCompletedTransfer()'s shutdown branch did), so the count could
+  // still be 0 immediately after issuing kNumTransfers cancel requests --
+  // eventLoopMain() would then see "!shutdown_ || pending_cancellations_ >
+  // 0" as false and exit immediately, letting the code below free every
+  // transfer/buffer and (for an owned USB session) close the handle while
+  // some of those just-cancelled transfers were still actually in flight
+  // with the driver. A late completion for one of them then wrote into
+  // already-freed memory -- a real, reliably reproducible use-after-free
+  // (confirmed via a minimal AudioCapture start()-then-immediate-stop()
+  // repro, both from the plain C++ AudioCapture.cpp example and via
+  // pyfreenect2, crashing every time). Only count transfers libusb
+  // actually accepted for cancellation (return value LIBUSB_SUCCESS) --
+  // one that's already completed/never left the submit queue won't get a
+  // callback at all, and waiting on it would hang instead of crash.
   for (auto *transfer : transfers_)
-    libusb_cancel_transfer(transfer);
+  {
+    if (libusb_cancel_transfer(transfer) == LIBUSB_SUCCESS)
+      pending_cancellations_++;
+  }
 
   if (event_thread_.joinable())
     event_thread_.join();
@@ -398,7 +420,21 @@ void LIBUSB_CALL AudioCaptureImpl::transferCallback(struct libusb_transfer *tran
 
 void AudioCaptureImpl::handleCompletedTransfer(struct libusb_transfer *transfer)
 {
-  if (transfer->status == LIBUSB_TRANSFER_CANCELLED)
+  // Once shutdown_ is set, any status this callback arrives with --
+  // LIBUSB_TRANSFER_CANCELLED because stop()'s cancel request landed in
+  // time, LIBUSB_TRANSFER_COMPLETED because the transfer happened to
+  // finish right around the same time instead, or any other terminal
+  // status -- means this transfer is now done and will not fire again.
+  // That's exactly what stop()'s pending_cancellations_ wait is tracking,
+  // so count it here unconditionally. Do not resubmit (we're shutting
+  // down) and do not call libusb_cancel_transfer() again here: there is
+  // nothing still in flight to cancel from inside a transfer's own
+  // terminal callback, and doing so previously left pending_cancellations_
+  // incremented with no matching decrement ever coming (this callback
+  // fires exactly once per submitted transfer), which would have hung
+  // eventLoopMain()'s wait forever once the use-after-free above was fixed
+  // on its own.
+  if (shutdown_)
   {
     pending_cancellations_--;
     return;
@@ -414,17 +450,9 @@ void AudioCaptureImpl::handleCompletedTransfer(struct libusb_transfer *transfer)
     }
   }
 
-  if (!shutdown_)
-  {
-    int r = libusb_submit_transfer(transfer);
-    if (r != LIBUSB_SUCCESS)
-      LOG_WARNING("failed to resubmit audio isochronous transfer: {}", libusb_error_name(r));
-  }
-  else
-  {
-    pending_cancellations_++;
-    libusb_cancel_transfer(transfer);
-  }
+  int r = libusb_submit_transfer(transfer);
+  if (r != LIBUSB_SUCCESS)
+    LOG_WARNING("failed to resubmit audio isochronous transfer: {}", libusb_error_name(r));
 }
 
 void AudioCaptureImpl::deliverSamples(const unsigned char *data, int length)

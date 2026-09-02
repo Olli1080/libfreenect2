@@ -8,6 +8,8 @@
 * [Maintainers](README.md#maintainers)
 * [Installation](README.md#installation)
   * [Windows / Visual Studio](README.md#windows--visual-studio)
+  * [Windows / vcpkg](README.md#windows--vcpkg)
+  * [Python bindings](README.md#python-bindings)
   * [MacOS](README.md#macos)
   * [Linux](README.md#linux)
 * [API Documentation (external)](https://openkinect.github.io/libfreenect2/)
@@ -33,6 +35,7 @@ This fork ([Olli1080/libfreenect2](https://github.com/Olli1080/libfreenect2)) ad
 * a Vulkan depth-processing backend (`ENABLE_VULKAN`, alongside OpenGL/OpenCL/CUDA)
 * microphone-array audio capture with direction-of-arrival/beamforming DSP (`ENABLE_AUDIO`)
 * a VA-API hardware JPEG decode backend for Intel GPUs on Linux (`ENABLE_VAAPI`, off by default)
+* `pyfreenect2`, pybind11-based Python bindings (`BUILD_PYTHON_BINDINGS`, off by default) — see [Python bindings](README.md#python-bindings)
 * example apps: a PCL point-cloud viewer (`BUILD_PCL_EXAMPLE`), ONNX Runtime object-detection/pose/hand-tracking demos (`BUILD_ONNX_EXAMPLES`), and a network streaming/recording tool (`BUILD_STREAMER_RECORDER`)
 
 See [cmake/Options.cmake](cmake/Options.cmake) for the full list of build options.
@@ -74,6 +77,7 @@ It has been reported to work for up to 5 devices on a high-end PC using multiple
 * VideoToolbox JPEG decoding: macOS only
 * OpenNI2 integration: OpenNI2 2.2.0.33
 * Microphone array audio capture: FFTW3 (for direction-of-arrival/beamforming DSP)
+* Python bindings: pybind11, Python 3 (with a dynamic/extension-capable build — see [Python bindings](README.md#python-bindings))
 
 
 ## Troubleshooting and reporting bugs
@@ -167,7 +171,46 @@ Then in your own project's `vcpkg-configuration.json`, point `overlay-ports` at 
   "overlay-ports": ["<path-to-libfreenect2-clone>/overlay-ports"]
 }
 ```
-(or pass `--overlay-ports=<path-to-libfreenect2-clone>/overlay-ports` on the `vcpkg install` command line). `vcpkg install libfreenect2` then resolves against this fork's port (`overlay-ports/libfreenect2/`) instead of the upstream registry one. Available features: `opengl`, `opencl`, `openni2`, `audio`, `vulkan` (all on by default; see [overlay-ports/libfreenect2/vcpkg.json](overlay-ports/libfreenect2/vcpkg.json)).
+(or pass `--overlay-ports=<path-to-libfreenect2-clone>/overlay-ports` on the `vcpkg install` command line). `vcpkg install libfreenect2` then resolves against this fork's port (`overlay-ports/libfreenect2/`) instead of the upstream registry one. Available features: `opengl`, `opencl`, `openni2`, `audio`, `vulkan` (all on by default), plus the opt-in `python` feature below; see [overlay-ports/libfreenect2/vcpkg.json](overlay-ports/libfreenect2/vcpkg.json).
+
+### Python bindings
+
+`pyfreenect2` is a [pybind11](https://github.com/pybind/pybind11)-based Python extension module covering device enumeration/control, video+depth capture, and registration -- plus microphone-array audio/DOA when built with `ENABLE_AUDIO` (the default). It's off by default; enable it with:
+```
+cmake --preset vs2026-vcpkg-all -DBUILD_PYTHON_BINDINGS=ON
+cmake --build --preset vs2026-vcpkg-all --config RelWithDebInfo --target pyfreenect2
+```
+This pulls in `pybind11` and a dynamic/extension-capable `python3` via the vcpkg manifest's `python` feature (see [vcpkg.json](vcpkg.json)). The built module (`pyfreenect2.pyd`) lands next to `Protonect.exe` in the build's `bin` output directory; point `PYTHONPATH` at that directory to import it:
+```python
+import sys
+sys.path.insert(0, r"build\vs2026-vcpkg-all\bin")  # or wherever CMAKE_LIBRARY_OUTPUT_DIRECTORY points
+import pyfreenect2
+
+fn = pyfreenect2.Freenect2()
+if fn.enumerate_devices() == 0:
+    raise SystemExit("no Kinect v2 found")
+
+dev = fn.open_default_device()
+listener = pyfreenect2.SyncMultiFrameListener(pyfreenect2.FrameType.Color | pyfreenect2.FrameType.Depth)
+dev.set_color_frame_listener(listener)
+dev.set_ir_and_depth_frame_listener(listener)
+
+if not dev.start():
+    raise SystemExit("failed to start device")
+try:
+    frames = listener.wait_for_new_frame(10_000)
+    depth = frames[pyfreenect2.FrameType.Depth]
+    print(depth.width, depth.height)   # e.g. numpy.asarray(depth) for a zero-copy view
+    listener.release(frames)
+finally:
+    dev.stop()
+    dev.close()
+```
+This mirrors [examples/Protonect.cpp](examples/Protonect.cpp)'s enumerate -> open -> listen -> start -> loop -> stop/close flow. Frames support the buffer protocol, so `numpy.asarray(frame)` gives a zero-copy view (valid only until the frame is released).
+
+**v1 limitations**, tracked as known follow-up work rather than silently missing:
+* Only the polling model (`SyncMultiFrameListener` for video, `SyncAudioListener` for audio) is exposed. Subclassing `FrameListener`/`AudioFrameListener` from Python to receive push callbacks is not yet supported.
+* No wheel/sdist packaging or `.pyi` type stubs yet -- import via `PYTHONPATH` as shown above.
 
 ### MacOS
 

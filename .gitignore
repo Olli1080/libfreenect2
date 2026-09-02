@@ -4,6 +4,10 @@ build
 # Downloaded/exported YOLOv8 .pt/.onnx weights (see examples/CMakeLists.txt DOWNLOAD_ONNX_MODELS)
 examples/models/
 
+# Python bytecode caches (examples/python/, src/python/ bindings build separately)
+__pycache__/
+*.pyc
+
 # Dependency folders
 depends/*/
 depends/*.deb

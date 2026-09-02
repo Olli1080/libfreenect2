@@ -110,6 +110,11 @@ else()
   set(HAVE_Audio no)
 endif()
 
+set(HAVE_Python disabled)
+if(BUILD_PYTHON_BINDINGS)
+  set(HAVE_Python yes)
+endif()
+
 # --- Config header ---
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/include/libfreenect2/config.h.in"
@@ -227,6 +232,11 @@ if(BUILD_STREAMER_RECORDER)
   add_subdirectory(tools/streamer_recorder)
 endif()
 
+# --- Python Bindings ---
+if(BUILD_PYTHON_BINDINGS)
+  add_subdirectory(src/python)
+endif()
+
 # --- Feature Summary ---
 message(STATUS "Feature summary:")
 message(STATUS "  C++17:         ${HAVE_CXX17}")
@@ -240,3 +250,4 @@ message(STATUS "  OpenNI2:       ${HAVE_OpenNI2}")
 message(STATUS "  Examples:      ${HAVE_Examples}")
 message(STATUS "  Streamer:      ${HAVE_streamer_recorder}")
 message(STATUS "  Audio:         ${HAVE_Audio}")
+message(STATUS "  Python:        ${HAVE_Python}")

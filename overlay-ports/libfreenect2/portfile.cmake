@@ -11,6 +11,7 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
         openni2    BUILD_OPENNI2_DRIVER
         audio      ENABLE_AUDIO
         vulkan     ENABLE_VULKAN
+        python     BUILD_PYTHON_BINDINGS
 )
 
 vcpkg_find_acquire_program(PKGCONFIG)

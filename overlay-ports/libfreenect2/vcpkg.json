@@ -56,6 +56,17 @@
         "vulkan",
         "shaderc"
       ]
+    },
+    "python": {
+      "description": "Build pyfreenect2 Python bindings",
+      "dependencies": [
+        "pybind11",
+        {
+          "name": "python3",
+          "default-features": false,
+          "features": ["extensions"]
+        }
+      ]
     }
   }
 }
