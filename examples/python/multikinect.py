@@ -31,13 +31,16 @@ What matters when driving more than one Kinect from one process:
     multiple Kinects"). On one shared controller the per-device rate in the
     table sags once the bus saturates.
 
-Accepted arguments (same spelling as protonect.py where they overlap):
-    [--pythonpath <dir>] [gl | cl | clkde | cuda | cudakde | vk | cpu]
-    [-gpu=<id>] [-frames <N>] [-norgb | -nodepth] [-viewer] [<serial> ...]
+Run with -help for the full option list (parsed with argparse). Summary:
+    [gl | cl | clkde | cuda | cudakde | vk | cpu] [<serial> ...]
+    [-gpu <id>] [-frames <N>] [-capacity <N>] [-norgb | -nodepth] [-viewer]
+    [--pythonpath <dir>]
 
     No pipeline arg      -> libfreenect2's compile-time default per device.
     Trailing digit args  -> restrict to those serials (default: all found).
     -frames <N>          -> stop once every device has delivered N frames.
+    -capacity <N>        -> per-device listener buffer depth (default 1; >= 2
+                           copies frames so a bursty consumer drops fewer).
     -viewer              -> one window, RGB + depth per device (needs numpy +
                            opencv-python); q or Esc closes it. Headless FPS
                            table is the default.
@@ -54,67 +57,58 @@ import sys
 import threading
 import time
 
-# Sibling module (examples/python/protonect.py) -- reuse its pipeline factory
-# and depth colouriser instead of duplicating them.
-from protonect import depth_to_bgr, make_pipeline
+# Sibling module (examples/python/protonect.py) -- reuse its pipeline factory,
+# depth colouriser and pipeline-token set instead of duplicating them.
+from protonect import PIPELINE_TOKENS, depth_to_bgr, make_pipeline
 
 PANEL_W = 512          # each device's column width, px
 RGB_H = 288            # 16:9 RGB strip height (depth strip is the native 424)
 
 
 def parse_args(argv: list[str]):
-    pipeline_names = {"cpu", "gl", "cl", "clkde", "cuda", "cudakde", "vk", "vulkan"}
+    p = argparse.ArgumentParser(
+        prog="multikinect.py", add_help=False,
+        description="pyfreenect2 port of examples/MultiKinect.cpp -- opens every "
+                    "connected Kinect v2 at once.")
+    p.add_argument("-help", "-h", "--help", action="help", help="show this help and exit")
+    p.add_argument("-gpu", type=int, default=-1, metavar="<id>",
+                   help="GPU device id for the cl/cuda/vk pipelines")
+    p.add_argument("-frames", type=int, default=None, metavar="<N>",
+                   help="stop once every device has delivered N frames")
+    p.add_argument("-capacity", type=int, default=1, metavar="<N>",
+                   help="per-device listener buffer depth (default 1)")
+    p.add_argument("-norgb", "--norgb", action="store_true", help="disable the color stream")
+    p.add_argument("-nodepth", "--nodepth", action="store_true", help="disable the depth stream")
+    p.add_argument("-viewer", "--viewer", action="store_true",
+                   help="one OpenCV window, RGB + depth per device")
+    p.add_argument("--pythonpath", metavar="<dir>",
+                   help="directory containing the pyfreenect2 extension module")
+    p.add_argument("tokens", nargs="*", metavar="[pipeline] [serial ...]",
+                   help="a pipeline token and/or the device serials to open (default: all)")
+    args = p.parse_args(argv)
 
     pipeline_name = None
-    device_id = -1
-    framemax = None
-    enable_rgb = True
-    enable_depth = True
-    viewer_enabled = False
-    pythonpath = None
     serials: list[str] = []
-
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in ("-help", "--help", "-h"):
-            print(__doc__)
-            raise SystemExit(0)
-        elif arg.startswith("-gpu="):
-            device_id = int(arg[len("-gpu="):])
-        elif arg in pipeline_names:
-            if pipeline_name is None:
-                pipeline_name = "vk" if arg == "vulkan" else arg
-        elif arg == "-frames":
-            i += 1
-            framemax = int(argv[i])
-        elif arg in ("-norgb", "--norgb"):
-            enable_rgb = False
-        elif arg in ("-nodepth", "--nodepth"):
-            enable_depth = False
-        elif arg in ("-viewer", "--viewer"):
-            viewer_enabled = True
-        elif arg == "--pythonpath":
-            i += 1
-            pythonpath = argv[i]
-        elif arg.isdigit():
-            serials.append(arg)
+    for tok in args.tokens:
+        if tok.isdigit():
+            serials.append(tok)
+        elif tok in PIPELINE_TOKENS:
+            pipeline_name = tok
         else:
-            print(f"Unknown argument: {arg}")
-        i += 1
+            p.error(f"unrecognized token: {tok!r}")
 
-    if not enable_rgb and not enable_depth:
-        print("Disabling both streams is not allowed!", file=sys.stderr)
-        raise SystemExit(1)
+    if args.norgb and args.nodepth:
+        p.error("disabling both streams is not allowed")
 
     return argparse.Namespace(
         pipeline_name=pipeline_name,
-        device_id=device_id,
-        framemax=framemax,
-        enable_rgb=enable_rgb,
-        enable_depth=enable_depth,
-        viewer_enabled=viewer_enabled,
-        pythonpath=pythonpath,
+        device_id=args.gpu,
+        framemax=args.frames,
+        capacity=max(1, args.capacity),
+        enable_rgb=not args.norgb,
+        enable_depth=not args.nodepth,
+        viewer_enabled=args.viewer,
+        pythonpath=args.pythonpath,
         serials=serials,
     )
 
@@ -122,11 +116,13 @@ def parse_args(argv: list[str]):
 class DeviceRunner:
     """One open Kinect plus its capture thread."""
 
-    def __init__(self, f2, dev, serial, frame_types, viewer_enabled, np=None, cv2=None):
+    def __init__(self, f2, dev, serial, frame_types, viewer_enabled, capacity=1, np=None, cv2=None):
         self.f2 = f2
         self.dev = dev
         self.serial = serial
-        self.listener = f2.SyncMultiFrameListener(frame_types)
+        mode = (f2.FrameQueueMode.DropOldest if capacity > 1
+                else f2.FrameQueueMode.DropNew)
+        self.listener = f2.SyncMultiFrameListener(frame_types, capacity, mode)
         dev.set_color_frame_listener(self.listener)
         dev.set_ir_and_depth_frame_listener(self.listener)
 
@@ -248,7 +244,8 @@ def main(argv: list[str]) -> int:
         if dev is None:
             print(f"  [{serial}] failed to open -- skipping")
             continue
-        runners.append(DeviceRunner(f2, dev, serial, frame_types, args.viewer_enabled, np, cv2))
+        runners.append(DeviceRunner(f2, dev, serial, frame_types, args.viewer_enabled,
+                                    args.capacity, np, cv2))
 
     if not runners:
         print("no devices opened!")

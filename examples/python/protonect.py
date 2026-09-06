@@ -32,63 +32,61 @@ import argparse
 import sys
 
 
+# Pipeline tokens accepted as the bare positional (mirrors the Protonect CLI).
+# create_pipeline() is the authority on which are actually available; this set
+# is only used to tell a pipeline token apart from a device serial.
+PIPELINE_TOKENS = {"cpu", "gl", "cl", "clkde", "cuda", "cudakde", "vk", "vulkan",
+                   "opengl", "opencl", "opencl_kde", "cl_kde", "cuda_kde"}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    # Single-dash long flags (-noviewer, -gpu, -frames) keep parity with
+    # Protonect.cpp; argparse handles them and `-gpu=<id>` natively.
+    p = argparse.ArgumentParser(
+        prog="protonect.py", add_help=False,
+        description="pyfreenect2 port of examples/Protonect.cpp.")
+    p.add_argument("-help", "-h", "--help", action="help", help="show this help and exit")
+    p.add_argument("-gpu", type=int, default=-1, metavar="<id>",
+                   help="GPU device id for the cl/cuda/vk pipelines")
+    p.add_argument("-frames", type=int, default=None, metavar="<N>",
+                   help="stop after N frames")
+    p.add_argument("-noviewer", "--noviewer", action="store_true",
+                   help="disable the OpenCV viewer window")
+    p.add_argument("-norgb", "--norgb", action="store_true", help="disable the color stream")
+    p.add_argument("-nodepth", "--nodepth", action="store_true", help="disable the depth stream")
+    p.add_argument("--pythonpath", metavar="<dir>",
+                   help="directory containing the pyfreenect2 extension module")
+    p.add_argument("tokens", nargs="*", metavar="[pipeline] [serial]",
+                   help="a pipeline token (cpu/gl/cl/clkde/cuda/cudakde/vk) and/or a device serial")
+    return p
+
+
 def parse_args(argv: list[str]):
-    pipeline_names = {"cpu", "gl", "cl", "clkde", "cuda", "cudakde", "vk", "vulkan"}
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     pipeline_name = None
-    device_id = -1
     serial = ""
-    viewer_enabled = True
-    enable_rgb = True
-    enable_depth = True
-    framemax = None
-    pythonpath = None
-
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in ("-help", "--help", "-h", "-v", "--version", "-version"):
-            print(__doc__)
-            raise SystemExit(0)
-        elif arg.startswith("-gpu="):
-            if pipeline_name is not None:
-                print("-gpu must be specified before pipeline argument", file=sys.stderr)
-                raise SystemExit(1)
-            device_id = int(arg[len("-gpu="):])
-        elif arg in pipeline_names:
-            if pipeline_name is None:
-                pipeline_name = "vk" if arg == "vulkan" else arg
-        elif arg.isdigit():
-            serial = arg
-        elif arg in ("-noviewer", "--noviewer"):
-            viewer_enabled = False
-        elif arg in ("-norgb", "--norgb"):
-            enable_rgb = False
-        elif arg in ("-nodepth", "--nodepth"):
-            enable_depth = False
-        elif arg == "-frames":
-            i += 1
-            framemax = int(argv[i])
-        elif arg == "--pythonpath":
-            i += 1
-            pythonpath = argv[i]
+    for tok in args.tokens:
+        if tok.isdigit():
+            serial = tok
+        elif tok in PIPELINE_TOKENS:
+            pipeline_name = tok
         else:
-            print(f"Unknown argument: {arg}")
-        i += 1
+            parser.error(f"unrecognized token: {tok!r}")
 
-    if not enable_rgb and not enable_depth:
-        print("Disabling both streams is not allowed!", file=sys.stderr)
-        raise SystemExit(1)
+    if args.norgb and args.nodepth:
+        parser.error("disabling both streams is not allowed")
 
     return argparse.Namespace(
         pipeline_name=pipeline_name,
-        device_id=device_id,
+        device_id=args.gpu,
         serial=serial,
-        viewer_enabled=viewer_enabled,
-        enable_rgb=enable_rgb,
-        enable_depth=enable_depth,
-        framemax=framemax,
-        pythonpath=pythonpath,
+        viewer_enabled=not args.noviewer,
+        enable_rgb=not args.norgb,
+        enable_depth=not args.nodepth,
+        framemax=args.frames,
+        pythonpath=args.pythonpath,
     )
 
 
@@ -130,10 +128,8 @@ def main(argv: list[str]) -> int:
     else:
         cv2 = None
 
-    print(f"Environment variables: LIBFREENECT2_LOGGER_LEVEL=<none|error|warning|info|debug>")
-    print("Usage: protonect.py [--pythonpath <dir>] [-gpu=<id>] [gl | cl | clkde | cuda | cudakde | vk | cpu] [<device serial>]")
-    print("        [-noviewer] [-norgb | -nodepth] [-help] [-version]")
-    print("        [-frames <number of frames to process>]")
+    print("Environment variables: LIBFREENECT2_LOGGER_LEVEL=<none|error|warning|info|debug>, "
+          "LIBFREENECT2_PIPELINE=<cpu|gl|cl|clkde|cuda|cudakde|vk>")
 
     fn = f2.Freenect2()
     if fn.enumerate_devices() == 0:
