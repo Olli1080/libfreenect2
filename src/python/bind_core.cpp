@@ -181,10 +181,17 @@ void bindCore(py::module_ &m)
     .def("set_color_camera_params", &Freenect2Device::setColorCameraParams, py::arg("params"))
     .def("set_ir_camera_params", &Freenect2Device::setIrCameraParams, py::arg("params"))
     .def("set_configuration", &Freenect2Device::setConfiguration, py::arg("config"))
+    // keep_alive<1,2>: the device holds the listener while streaming.
+    // keep_alive<2,1>: and the listener holds the device (hence, via
+    // reference_internal, the Freenect2 context and its pipelines) so that
+    // ~SyncMultiFrameListener always runs *before* the pipeline that
+    // allocated any frames still queued in it -- otherwise the listener's
+    // drain frees frames whose allocator is already gone (segfault at
+    // interpreter finalization, where GC order is otherwise undefined).
     .def("set_color_frame_listener", &Freenect2Device::setColorFrameListener, py::arg("listener"),
-         py::keep_alive<1, 2>())
+         py::keep_alive<1, 2>(), py::keep_alive<2, 1>())
     .def("set_ir_and_depth_frame_listener", &Freenect2Device::setIrAndDepthFrameListener, py::arg("listener"),
-         py::keep_alive<1, 2>())
+         py::keep_alive<1, 2>(), py::keep_alive<2, 1>())
     .def("set_color_auto_exposure", &Freenect2Device::setColorAutoExposure, py::arg("exposure_compensation") = 0.0f)
     .def("set_color_semi_auto_exposure", &Freenect2Device::setColorSemiAutoExposure, py::arg("pseudo_exposure_time_ms"))
     .def("set_color_manual_exposure", &Freenect2Device::setColorManualExposure,

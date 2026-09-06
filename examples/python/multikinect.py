@@ -52,7 +52,6 @@ itself has no such dependency (see README.md#python-bindings).
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import threading
 import time
@@ -308,18 +307,8 @@ def main(argv: list[str]) -> int:
     print("\nper-device totals:")
     for r in runners:
         print(f"  {r.serial}  {r.frames} frames")
-    sys.stdout.flush()
-
-    # Every device is stopped and closed and all output is flushed. Exit now
-    # instead of falling through CPython's finalizer chain: pyfreenect2's
-    # pybind11 objects (Freenect2 <-> Freenect2Device <-> SyncMultiFrameListener,
-    # wired with reference_internal / keep_alive) are not guaranteed a safe
-    # teardown order at interpreter shutdown, and with several devices open
-    # that can segfault after main() has already returned. os._exit skips it.
-    os._exit(0)
+    return 0
 
 
 if __name__ == "__main__":
-    # A successful run ends via os._exit(0) inside main(); only the early
-    # error paths (no device opened yet) fall through to here.
-    sys.exit(main(sys.argv[1:]) or 0)
+    sys.exit(main(sys.argv[1:]))
