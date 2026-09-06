@@ -71,7 +71,7 @@ void sigusr1_handler(int s)
     return;
 /// [pause]
   if (protonect_paused)
-    devtopause->start();
+    (void)devtopause->start();
   else
     devtopause->stop();
   protonect_paused = !protonect_paused;
@@ -334,19 +334,20 @@ int main(int argc, char *argv[])
   }
   else
   {
+    const char *replay_dir = "recordings/depth";
     DIR *d;
     struct dirent *dir;
 
     std::vector<std::string> frame_filenames;
 
-    d = opendir("recordings/depth");
-    
+    d = opendir(replay_dir);
+
     if(!d)
     {
-      std::cerr << "Could not open directory " << dir << " for replay." << std::endl;
+      std::cerr << "Could not open directory " << replay_dir << " for replay." << std::endl;
       exit(1);
     }
-    
+
     while((dir = readdir(d)) != NULL)
     {
       std::string name = dir->d_name;
