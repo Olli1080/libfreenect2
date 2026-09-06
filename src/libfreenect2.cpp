@@ -39,6 +39,7 @@
 #include <memory>
 
 #include <libfreenect2/libfreenect2.hpp>
+#include <libfreenect2/pipeline_factory.h>
 
 #include <libfreenect2/usb/event_loop.h>
 #include <libfreenect2/usb/transfer_pool.h>
@@ -1087,44 +1088,17 @@ void *Freenect2DeviceImpl::getUsbDeviceHandle()
   return usb_device_handle_.get();
 }
 
-std::unique_ptr<const PacketPipeline> createPacketPipelineByName(std::string_view name)
-{
-  // Names match the pipeline tokens accepted by examples/Protonect.cpp and
-  // examples/MultiKinect.cpp so `LIBFREENECT2_PIPELINE` and the CLI agree.
-#if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
-  if (name == "gl")
-    return std::make_unique<OpenGLPacketPipeline>();
-#endif
-#if defined(LIBFREENECT2_WITH_VULKAN_SUPPORT)
-  if (name == "vk" || name == "vulkan")
-    return std::make_unique<VulkanPacketPipeline>();
-#endif
-#if defined(LIBFREENECT2_WITH_CUDA_SUPPORT)
-  if (name == "cuda")
-    return std::make_unique<CudaPacketPipeline>();
-  if (name == "cudakde")
-    return std::make_unique<CudaKdePacketPipeline>();
-#endif
-#if defined(LIBFREENECT2_WITH_OPENCL_SUPPORT)
-  if (name == "cl")
-    return std::make_unique<OpenCLPacketPipeline>();
-  if (name == "clkde")
-    return std::make_unique<OpenCLKdePacketPipeline>();
-#endif
-  if (name == "cpu")
-    return std::make_unique<CpuPacketPipeline>();
-  return nullptr;
-}
-
 std::unique_ptr<const PacketPipeline> createDefaultPacketPipeline()
 {
   const char *pipeline_env = std::getenv("LIBFREENECT2_PIPELINE");
   if (pipeline_env)
   {
-    auto pipeline = createPacketPipelineByName(pipeline_env);
+    // The registry accepts the same tokens as the Protonect CLI (cpu, gl, cl,
+    // clkde, cuda, cudakde, vk) plus aliases (opengl, opencl, cl_kde, ...).
+    std::unique_ptr<PacketPipeline> pipeline = createPacketPipeline(pipeline_env);
     if (pipeline)
-      return pipeline;
-    else 
+      return std::unique_ptr<const PacketPipeline>(pipeline.release());
+    else
       LOG_WARNING("`{}' pipeline is not available.", pipeline_env);
   }
 

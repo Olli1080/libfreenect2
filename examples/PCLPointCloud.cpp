@@ -13,6 +13,7 @@
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/packet_pipeline.h>
+#include <libfreenect2/pipeline_factory.h>
 #include <libfreenect2/registration.h>
 
 #include <pcl/point_cloud.h>
@@ -66,38 +67,10 @@ int main(int argc, char** argv)
 	if (argc > 1)
 	{
 		std::string arg(argv[1]);
-		if (arg == "cl")
-		{
-#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
-			pipeline = new libfreenect2::OpenCLPacketPipeline();
-#else
-			std::cerr << "OpenCL pipeline is not supported!\n";
-#endif
-		}
-		else if (arg == "vk" || arg == "vulkan")
-		{
-#ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
-			pipeline = new libfreenect2::VulkanPacketPipeline();
-#else
-			std::cerr << "Vulkan pipeline is not supported!\n";
-#endif
-		}
-		else if (arg == "gl")
-		{
-#ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
-			pipeline = new libfreenect2::OpenGLPacketPipeline();
-#else
-			std::cerr << "OpenGL pipeline is not supported!\n";
-#endif
-		}
-		else if (arg == "cpu")
-		{
-			pipeline = new libfreenect2::CpuPacketPipeline();
-		}
-		else
-		{
-			std::cerr << "Unknown pipeline argument: " << arg << " (expected cl | gl | vk | cpu)\n";
-		}
+		pipeline = libfreenect2::createPacketPipeline(arg).release();
+		if (!pipeline)
+			std::cerr << "Unknown/unavailable pipeline '" << arg
+			          << "' (expected cpu | gl | cl | clkde | cuda | cudakde | vk)\n";
 	}
 
 	libfreenect2::Freenect2 freenect2;

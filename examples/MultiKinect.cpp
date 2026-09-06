@@ -102,6 +102,7 @@
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/packet_pipeline.h>
+#include <libfreenect2/pipeline_factory.h>
 #include <libfreenect2/logger.h>
 #include <spdlog/spdlog.h>
 
@@ -125,35 +126,16 @@ void sigint_handler(int)
 }
 
 /// Build a fresh pipeline for one device. `name` empty -> nullptr (let
-/// libfreenect2 pick its compile-time default). Mirrors Protonect's mapping.
+/// libfreenect2 pick its compile-time default). Names are the shared
+/// libfreenect2 pipeline tokens (cpu, gl, cl, clkde, cuda, cudakde, vk).
 libfreenect2::PacketPipeline *makePipeline(const std::string &name, int gpuId)
 {
   if (name.empty())
     return nullptr;
-  if (name == "cpu")
-    return new libfreenect2::CpuPacketPipeline();
-#ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
-  if (name == "gl")
-    return new libfreenect2::OpenGLPacketPipeline();
-#endif
-#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
-  if (name == "cl")
-    return new libfreenect2::OpenCLPacketPipeline(gpuId);
-  if (name == "clkde")
-    return new libfreenect2::OpenCLKdePacketPipeline(gpuId);
-#endif
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-  if (name == "cuda")
-    return new libfreenect2::CudaPacketPipeline(gpuId);
-  if (name == "cudakde")
-    return new libfreenect2::CudaKdePacketPipeline(gpuId);
-#endif
-#ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
-  if (name == "vk" || name == "vulkan")
-    return new libfreenect2::VulkanPacketPipeline(gpuId);
-#endif
-  std::cerr << "pipeline '" << name << "' not supported by this build; using default" << std::endl;
-  return nullptr;
+  auto pipeline = libfreenect2::createPacketPipeline(name, gpuId);
+  if (!pipeline)
+    std::cerr << "pipeline '" << name << "' not available in this build; using default" << std::endl;
+  return pipeline.release();
 }
 
 /// One open Kinect plus its capture thread.
@@ -286,9 +268,8 @@ int main(int argc, char *argv[])
     const std::string arg(argv[i]);
     if (arg == "-help" || arg == "--help" || arg == "-h")
       return 0;
-    else if (arg == "cpu" || arg == "gl" || arg == "cl" || arg == "clkde" ||
-             arg == "cuda" || arg == "cudakde" || arg == "vk" || arg == "vulkan")
-      pipeline_name = (arg == "vulkan") ? "vk" : arg;
+    else if (libfreenect2::hasPacketPipeline(arg))
+      pipeline_name = arg;
     else if (arg.rfind("-gpu=", 0) == 0)
       gpuId = std::atoi(arg.c_str() + 5);
     else if (arg == "-frames")

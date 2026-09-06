@@ -35,6 +35,7 @@
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/registration.h>
 #include <libfreenect2/packet_pipeline.h>
+#include <libfreenect2/pipeline_factory.h>
 #include <libfreenect2/logger.h>
 /// [headers]
 #ifdef EXAMPLES_WITH_OPENGL_SUPPORT
@@ -146,6 +147,7 @@ int main(int argc, char *argv[])
 /// [context]
 
   std::string serial = "";
+  std::string pipeline_name = "";
 
   bool viewer_enabled = true;
   bool enable_rgb = true;
@@ -164,73 +166,11 @@ int main(int argc, char *argv[])
     }
     else if(arg.find("-gpu=") == 0)
     {
-      if (pipeline)
-      {
-        std::cerr << "-gpu must be specified before pipeline argument" << std::endl;
-        return -1;
-      }
       deviceId = atoi(argv[argI] + 5);
     }
-    else if(arg == "cpu")
+    else if(libfreenect2::hasPacketPipeline(arg))
     {
-      if(!pipeline)
-/// [pipeline]
-        pipeline = new libfreenect2::CpuPacketPipeline();
-/// [pipeline]
-    }
-    else if(arg == "gl")
-    {
-#ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::OpenGLPacketPipeline();
-#else
-      std::cout << "OpenGL pipeline is not supported!" << std::endl;
-#endif
-    }
-    else if(arg == "cl")
-    {
-#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::OpenCLPacketPipeline(deviceId);
-#else
-      std::cout << "OpenCL pipeline is not supported!" << std::endl;
-#endif
-    }
-    else if(arg == "vk" || arg == "vulkan")
-    {
-#ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::VulkanPacketPipeline(deviceId);
-#else
-      std::cout << "Vulkan pipeline is not supported!" << std::endl;
-#endif
-    }
-    else if(arg == "clkde")
-    {
-#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::OpenCLKdePacketPipeline(deviceId);
-#else
-      std::cout << "OpenCL pipeline is not supported!" << std::endl;
-#endif
-    }
-    else if(arg == "cuda")
-    {
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::CudaPacketPipeline(deviceId);
-#else
-      std::cout << "CUDA pipeline is not supported!" << std::endl;
-#endif
-    }
-    else if(arg == "cudakde")
-    {
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::CudaKdePacketPipeline(deviceId);
-#else
-      std::cout << "CUDA pipeline is not supported!" << std::endl;
-#endif
+      pipeline_name = arg;
     }
     else if(arg.find_first_not_of("0123456789") == std::string::npos) //check if parameter could be a serial number
     {
@@ -281,6 +221,15 @@ int main(int argc, char *argv[])
     serial = freenect2.getDefaultDeviceSerialNumber();
   }
 /// [discovery]
+
+  if (!pipeline_name.empty())
+  {
+/// [pipeline]
+    // Build a pipeline by name -- same tokens as LIBFREENECT2_PIPELINE.
+    // -gpu=<id> is forwarded to the backends that use it (cl, cuda, vk).
+    pipeline = libfreenect2::createPacketPipeline(pipeline_name, deviceId).release();
+/// [pipeline]
+  }
 
   if(pipeline)
   {

@@ -50,6 +50,7 @@ target_sources(freenect2
     cpu_depth_packet_processor.cpp
     command_transaction.cpp
     registration.cpp
+    packet_pipeline_registry.cpp
     libfreenect2.cpp
   PUBLIC FILE_SET HEADERS
   BASE_DIRS ${PROJECT_SOURCE_DIR}/include
@@ -61,6 +62,7 @@ target_sources(freenect2
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/color_settings.h
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/led_settings.h
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/packet_pipeline.h
+    ${PROJECT_SOURCE_DIR}/include/libfreenect2/pipeline_factory.h
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/registration.h
 )
 

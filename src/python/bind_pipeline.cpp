@@ -24,11 +24,11 @@
 
 #include <libfreenect2/config.h>
 #include <libfreenect2/packet_pipeline.h>
+#include <libfreenect2/pipeline_factory.h>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <vector>
 #include <string>
 
 namespace py = pybind11;
@@ -47,19 +47,15 @@ void bindPipeline(py::module_ &m)
   py::class_<CpuPacketPipeline, PacketPipeline, py::smart_holder>(m, "CpuPacketPipeline")
     .def(py::init<>());
 
-  std::vector<std::string> available = { "cpu" };
-
 #ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
   py::class_<OpenGLPacketPipeline, PacketPipeline, py::smart_holder>(m, "OpenGLPacketPipeline")
     .def(py::init([](bool debug) { return new OpenGLPacketPipeline(nullptr, debug); }),
          py::arg("debug") = false);
-  available.emplace_back("opengl");
 #endif
 
 #ifdef LIBFREENECT2_WITH_VULKAN_SUPPORT
   py::class_<VulkanPacketPipeline, PacketPipeline, py::smart_holder>(m, "VulkanPacketPipeline")
     .def(py::init<int>(), py::arg("device_id") = -1);
-  available.emplace_back("vulkan");
 #endif
 
 #ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
@@ -67,8 +63,6 @@ void bindPipeline(py::module_ &m)
     .def(py::init<int>(), py::arg("device_id") = -1);
   py::class_<OpenCLKdePacketPipeline, PacketPipeline, py::smart_holder>(m, "OpenCLKdePacketPipeline")
     .def(py::init<int>(), py::arg("device_id") = -1);
-  available.emplace_back("opencl");
-  available.emplace_back("opencl_kde");
 #endif
 
 #ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
@@ -76,12 +70,18 @@ void bindPipeline(py::module_ &m)
     .def(py::init<int>(), py::arg("device_id") = -1);
   py::class_<CudaKdePacketPipeline, PacketPipeline, py::smart_holder>(m, "CudaKdePacketPipeline")
     .def(py::init<int>(), py::arg("device_id") = -1);
-  available.emplace_back("cuda");
-  available.emplace_back("cuda_kde");
 #endif
 
-  m.def("available_pipelines", [available]() { return available; },
-        "Names of the PacketPipeline backends actually compiled into this build.");
+  // Name-based construction, sharing libfreenect2's pipeline registry with the
+  // LIBFREENECT2_PIPELINE env var and the C++ examples.
+  m.def("available_pipelines", &getAvailablePacketPipelines,
+        "Canonical names of the PacketPipeline backends compiled into this "
+        "build: a subset of cpu, gl, cl, clkde, cuda, cudakde, vk.");
+  m.def("create_pipeline", &createPacketPipeline,
+        py::arg("name"), py::arg("gpu_device_id") = -1,
+        "Construct a pipeline by canonical name or alias (opengl, opencl, "
+        "cl_kde, cuda_kde, vulkan). Returns None if unknown. gpu_device_id "
+        "selects the GPU for cl/cuda/vk.");
 }
 
 } // namespace pyfreenect2

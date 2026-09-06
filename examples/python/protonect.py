@@ -93,39 +93,14 @@ def parse_args(argv: list[str]):
 
 
 def make_pipeline(f2, name, device_id):
-    if name is None or name == "cpu":
-        return f2.CpuPacketPipeline() if name == "cpu" else None
-    if name == "gl":
-        if not hasattr(f2, "OpenGLPacketPipeline"):
-            print("OpenGL pipeline is not supported!")
-            return None
-        return f2.OpenGLPacketPipeline()
-    if name == "cl":
-        if not hasattr(f2, "OpenCLPacketPipeline"):
-            print("OpenCL pipeline is not supported!")
-            return None
-        return f2.OpenCLPacketPipeline(device_id)
-    if name == "clkde":
-        if not hasattr(f2, "OpenCLKdePacketPipeline"):
-            print("OpenCL pipeline is not supported!")
-            return None
-        return f2.OpenCLKdePacketPipeline(device_id)
-    if name == "cuda":
-        if not hasattr(f2, "CudaPacketPipeline"):
-            print("CUDA pipeline is not supported!")
-            return None
-        return f2.CudaPacketPipeline(device_id)
-    if name == "cudakde":
-        if not hasattr(f2, "CudaKdePacketPipeline"):
-            print("CUDA pipeline is not supported!")
-            return None
-        return f2.CudaKdePacketPipeline(device_id)
-    if name == "vk":
-        if not hasattr(f2, "VulkanPacketPipeline"):
-            print("Vulkan pipeline is not supported!")
-            return None
-        return f2.VulkanPacketPipeline(device_id)
-    return None
+    """None name -> let libfreenect2 pick its default. Otherwise a canonical
+    token (cpu/gl/cl/clkde/cuda/cudakde/vk) or alias, via the shared registry."""
+    if name is None:
+        return None
+    pipeline = f2.create_pipeline(name, device_id)
+    if pipeline is None:
+        print(f"pipeline '{name}' is not available in this build")
+    return pipeline
 
 
 def depth_to_bgr(np, cv2, depth, max_depth_mm=4500.0):
