@@ -55,6 +55,12 @@ generate_export_header(freenect2_logging
   EXPORT_FILE_NAME ${PROJECT_BINARY_DIR}/freenect2_logging/export.h
 )
 
+# Installed because the public logger.h / frame_listener.hpp include it.
+include(GNUInstallDirs)
+install(FILES ${PROJECT_BINARY_DIR}/freenect2_logging/export.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/freenect2_logging
+)
+
 # fmt is PUBLIC: the internal logging.h (used by core + every backend, none
 # of it installed) formats with fmt. spdlog is PRIVATE: only logging_spdlog.cpp
 # needs it, and only a consumer that includes <libfreenect2/logger_spdlog.h>
