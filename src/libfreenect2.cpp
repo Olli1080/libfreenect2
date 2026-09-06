@@ -1089,17 +1089,27 @@ void *Freenect2DeviceImpl::getUsbDeviceHandle()
 
 std::unique_ptr<const PacketPipeline> createPacketPipelineByName(std::string_view name)
 {
+  // Names match the pipeline tokens accepted by examples/Protonect.cpp and
+  // examples/MultiKinect.cpp so `LIBFREENECT2_PIPELINE` and the CLI agree.
 #if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
   if (name == "gl")
     return std::make_unique<OpenGLPacketPipeline>();
 #endif
+#if defined(LIBFREENECT2_WITH_VULKAN_SUPPORT)
+  if (name == "vk" || name == "vulkan")
+    return std::make_unique<VulkanPacketPipeline>();
+#endif
 #if defined(LIBFREENECT2_WITH_CUDA_SUPPORT)
   if (name == "cuda")
     return std::make_unique<CudaPacketPipeline>();
+  if (name == "cudakde")
+    return std::make_unique<CudaKdePacketPipeline>();
 #endif
 #if defined(LIBFREENECT2_WITH_OPENCL_SUPPORT)
   if (name == "cl")
     return std::make_unique<OpenCLPacketPipeline>();
+  if (name == "clkde")
+    return std::make_unique<OpenCLKdePacketPipeline>();
 #endif
   if (name == "cpu")
     return std::make_unique<CpuPacketPipeline>();
