@@ -23,10 +23,12 @@ add_library(freenect2_logging SHARED)
 target_sources(freenect2_logging
   PRIVATE
     ${PROJECT_SOURCE_DIR}/src/logging.cpp
+    ${PROJECT_SOURCE_DIR}/src/logging_spdlog.cpp
     ${PROJECT_SOURCE_DIR}/src/frame.cpp
     ${PROJECT_SOURCE_DIR}/src/device_reset_coordination.cpp
   PRIVATE
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/logger.h
+    ${PROJECT_SOURCE_DIR}/include/libfreenect2/logger_spdlog.h
     ${PROJECT_SOURCE_DIR}/include/internal/libfreenect2/logging.h
     ${PROJECT_SOURCE_DIR}/include/internal/libfreenect2/perf_logging.h
     ${PROJECT_SOURCE_DIR}/include/internal/libfreenect2/device_reset_coordination.h
@@ -53,8 +55,13 @@ generate_export_header(freenect2_logging
   EXPORT_FILE_NAME ${PROJECT_BINARY_DIR}/freenect2_logging/export.h
 )
 
+# fmt is PUBLIC: the internal logging.h (used by core + every backend, none
+# of it installed) formats with fmt. spdlog is PRIVATE: only logging_spdlog.cpp
+# needs it, and only a consumer that includes <libfreenect2/logger_spdlog.h>
+# pulls spdlog into its own build.
 target_link_libraries(freenect2_logging
-  PUBLIC spdlog::spdlog
+  PUBLIC fmt::fmt
+  PRIVATE spdlog::spdlog
 )
 
 install(TARGETS freenect2_logging

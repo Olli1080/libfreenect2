@@ -10,5 +10,5 @@ freenect2_setup_backend_library(freenect2_vaapi)
 target_include_directories(freenect2_vaapi PRIVATE ${VAAPI_INCLUDE_DIRS})
 
 target_link_libraries(freenect2_vaapi
-  PRIVATE ${VAAPI_LIBRARIES} ${JPEG_LIBRARY} spdlog::spdlog freenect2_support freenect2_logging
+  PRIVATE ${VAAPI_LIBRARIES} ${JPEG_LIBRARY} freenect2_support freenect2_logging
 )

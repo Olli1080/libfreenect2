@@ -24,14 +24,24 @@
  * either License.
  */
 
-/** @file logger.h Logging utilities built on spdlog. */
+/** @file logger.h Logging control for %libfreenect2.
+ *
+ * This header has no third-party dependency. The library formats each line
+ * internally (with fmt) and hands the finished text to a sink; by default the
+ * sink writes to stderr. Point it somewhere else with setLogSink(), or turn
+ * logging off entirely with setLogLevel(LogLevel::None).
+ *
+ * If you would rather route output through an spdlog logger you own (rotating
+ * files, syslog, a network sink, ...), include <libfreenect2/logger_spdlog.h>
+ * instead -- that is the only libfreenect2 header that depends on spdlog, and
+ * only code that includes it needs spdlog on its include path.
+ */
 
 #ifndef LIBFREENECT2_LOGGER_H_
 #define LIBFREENECT2_LOGGER_H_
 
-#include <memory>
-
-#include <spdlog/spdlog.h>
+#include <functional>
+#include <string_view>
 
 #include <freenect2_logging/export.h>
 
@@ -39,46 +49,40 @@ namespace libfreenect2
 {
 
 /** @defgroup logging Logging utilities
- * %libfreenect2 logs through its own dedicated spdlog logger instance
- * (never the spdlog default logger). Install your own logger (console, file,
- * rotating, network sink, ...) with setGlobalLogger(), or adjust the level of
- * the library's own instance with getLogLevel()/setLogLevel(). */
+ * Control where %libfreenect2's diagnostic output goes and how much of it.
+ */
 ///@{
 
-/** Get the default log level.
- * Default is `spdlog::level::info`, or overridden by environment variable
- * `LIBFREENECT2_LOGGER_LEVEL`. `LIBFREENECT2_LOGGER_LEVEL` can contain a
- * case-insensitive level name: `none`, `error`, `warning`, `info`, `debug`.
- */
-FREENECT2_LOGGING_EXPORT spdlog::level::level_enum getDefaultLevel();
+/** Severity levels, most to least severe. `None` disables all output. */
+enum class LogLevel
+{
+  None = 0,
+  Error,
+  Warning,
+  Info,
+  Debug
+};
 
-/** Create a console (stderr) spdlog logger that logs at the given level. */
-FREENECT2_LOGGING_EXPORT std::shared_ptr<spdlog::logger> createConsoleLogger(spdlog::level::level_enum level);
+/** The level the library starts at: `Info`, unless the environment variable
+ * `LIBFREENECT2_LOGGER_LEVEL` overrides it (case-insensitive `none`/`off`,
+ * `error`, `warning`/`warn`, `info`, `debug`). */
+FREENECT2_LOGGING_EXPORT LogLevel getDefaultLevel();
 
-/** Create a console logger using the default level (see getDefaultLevel()). */
-FREENECT2_LOGGING_EXPORT std::shared_ptr<spdlog::logger> createDefaultLogger();
+/** The current threshold; lines below it are dropped. */
+FREENECT2_LOGGING_EXPORT LogLevel getLogLevel();
 
-/** Get the pointer to the current logger.
- * @return The current global logger. Never null; a default console logger
- * is always available.
- */
-FREENECT2_LOGGING_EXPORT std::shared_ptr<spdlog::logger> getGlobalLogger();
+/** Set the threshold. `LogLevel::None` silences the library completely
+ * without touching your application's own logging. */
+FREENECT2_LOGGING_EXPORT void setLogLevel(LogLevel level);
 
-/** Set the logger for all log output in this library.
- * @param logger Your logger, or null to restore the default console logger.
- */
-FREENECT2_LOGGING_EXPORT void setGlobalLogger(std::shared_ptr<spdlog::logger> logger);
+/** Receives one fully formatted log line (no trailing newline). Called from
+ * whichever thread produced the message; an implementation must be
+ * thread-safe if the library is used from more than one thread. */
+using LogSink = std::function<void(LogLevel level, std::string_view message)>;
 
-/** Get the log level of the library's own logger instance.
- * This never affects spdlog's default logger or any other application loggers.
- */
-FREENECT2_LOGGING_EXPORT spdlog::level::level_enum getLogLevel();
-
-/** Set the log level of the library's own logger instance.
- * Use `spdlog::level::off` to disable all logging from this library.
- * This never affects spdlog's default logger or any other application loggers.
- */
-FREENECT2_LOGGING_EXPORT void setLogLevel(spdlog::level::level_enum level);
+/** Install a sink for all subsequent log output. Passing `nullptr` restores
+ * the built-in stderr sink. */
+FREENECT2_LOGGING_EXPORT void setLogSink(LogSink sink);
 
 ///@}
 } /* namespace libfreenect2 */

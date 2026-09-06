@@ -41,10 +41,12 @@ else()
   endif()
 endif()
 
-# --- Always Required: spdlog (logging) ---
+# --- Always Required: fmt (internal log formatting), spdlog (opt-in bridge) ---
 if(VCPKG_MANIFEST_MODE)
+  find_package(fmt CONFIG REQUIRED)
   find_package(spdlog CONFIG REQUIRED)
 else()
+  find_package(fmt REQUIRED)
   find_package(spdlog REQUIRED)
 endif()
 

@@ -14,11 +14,11 @@ target_link_libraries(freenect2_turbojpeg
 
 if(VCPKG_MANIFEST_MODE)
   target_link_libraries(freenect2_turbojpeg
-    PRIVATE libjpeg-turbo::turbojpeg spdlog::spdlog
+    PRIVATE libjpeg-turbo::turbojpeg
   )
 else()
   target_include_directories(freenect2_turbojpeg PRIVATE ${TurboJPEG_INCLUDE_DIRS})
   target_link_libraries(freenect2_turbojpeg
-    PRIVATE ${TurboJPEG_LIBRARIES} spdlog::spdlog
+    PRIVATE ${TurboJPEG_LIBRARIES}
   )
 endif()

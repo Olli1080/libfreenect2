@@ -45,7 +45,7 @@ target_compile_features(freenect2_support PUBLIC cxx_std_17)
 set_target_properties(freenect2_support PROPERTIES CXX_STANDARD_REQUIRED ON)
 
 target_link_libraries(freenect2_support
-  PUBLIC spdlog::spdlog
+  PUBLIC
   PRIVATE freenect2_logging
 )
 

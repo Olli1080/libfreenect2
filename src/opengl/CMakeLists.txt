@@ -30,11 +30,11 @@ target_link_libraries(freenect2_opengl
 
 if(VCPKG_MANIFEST_MODE)
   target_link_libraries(freenect2_opengl
-    PRIVATE glfw OpenGL::GL spdlog::spdlog
+    PRIVATE glfw OpenGL::GL
   )
 else()
   target_include_directories(freenect2_opengl PRIVATE ${GLFW3_INCLUDE_DIRS})
   target_link_libraries(freenect2_opengl
-    PRIVATE ${GLFW3_LIBRARIES} ${OPENGL_gl_LIBRARY} spdlog::spdlog
+    PRIVATE ${GLFW3_LIBRARIES} ${OPENGL_gl_LIBRARY}
   )
 endif()

@@ -32,5 +32,5 @@ endif()
 target_compile_options(freenect2_cuda PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:-std=c++17>")
 
 target_link_libraries(freenect2_cuda
-  PRIVATE CUDA::cudart spdlog::spdlog freenect2_support freenect2_logging
+  PRIVATE CUDA::cudart freenect2_support freenect2_logging
 )

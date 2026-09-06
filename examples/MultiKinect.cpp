@@ -107,7 +107,6 @@
 #include <libfreenect2/packet_pipeline.h>
 #include <libfreenect2/pipeline_factory.h>
 #include <libfreenect2/logger.h>
-#include <spdlog/spdlog.h>
 
 #ifdef MULTIKINECT_WITH_OPENCV
 #include <opencv2/core.hpp>
@@ -252,10 +251,12 @@ int main(int argc, char *argv[])
             << " [gl | cl | clkde | cuda | cudakde | vk | cpu] [-gpu=<id>]"
             << " [-frames <N>] [-norgb | -nodepth] [-viewer] [<serial> ...]" << std::endl;
 
-#if defined(_WIN32)
-  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(spdlog::level::info));
-#else
-  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(spdlog::level::debug));
+  // The library honours LIBFREENECT2_LOGGER_LEVEL on load; raise to Debug for
+  // development only when the user has not set it, and not on the slow
+  // Windows console.
+#if !defined(_WIN32)
+  if (std::getenv("LIBFREENECT2_LOGGER_LEVEL") == nullptr)
+    libfreenect2::setLogLevel(libfreenect2::LogLevel::Debug);
 #endif
 
   std::string pipeline_name;

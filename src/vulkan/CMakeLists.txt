@@ -77,5 +77,5 @@ freenect2_setup_backend_library(freenect2_vulkan)
 target_include_directories(freenect2_vulkan PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_link_libraries(freenect2_vulkan
-  PRIVATE freenect2_support freenect2_logging Vulkan::Vulkan Vulkan::Headers spdlog::spdlog
+  PRIVATE freenect2_support freenect2_logging Vulkan::Vulkan Vulkan::Headers
 )

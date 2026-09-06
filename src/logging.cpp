@@ -24,14 +24,17 @@
  * either License.
  */
 
-/** @file logging.cpp spdlog-backed logging implementation. */
+/** @file logging.cpp Sink-based logging implementation (no spdlog). */
 
 #include <libfreenect2/logging.h>
-#include <cstdlib>
-#include <cctype>
-#include <string>
+
 #include <algorithm>
-#include <memory>
+#include <atomic>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>
+#include <string>
 
 #ifdef LIBFREENECT2_WITH_PROFILING
 #include <vector>
@@ -41,82 +44,112 @@
 
 #include <chrono>
 
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_sinks.h>
+#include <fmt/format.h>
 
 namespace libfreenect2
 {
 
-spdlog::level::level_enum getDefaultLevel()
+namespace
 {
-  spdlog::level::level_enum level = spdlog::level::info;
-
-  char *env_logger_level_c_str = getenv("LIBFREENECT2_LOGGER_LEVEL");
-
-  if(env_logger_level_c_str != nullptr)
+const char *levelName(LogLevel level)
+{
+  switch (level)
   {
-    std::string env_logger_level_str(env_logger_level_c_str);
-    std::transform(env_logger_level_str.begin(), env_logger_level_str.end(), env_logger_level_str.begin(),
+    case LogLevel::Error:   return "error";
+    case LogLevel::Warning: return "warning";
+    case LogLevel::Info:    return "info";
+    case LogLevel::Debug:   return "debug";
+    default:                return "none";
+  }
+}
+
+void defaultSink(LogLevel level, std::string_view message)
+{
+  // Matches the historical spdlog pattern "[%l] %v", line-buffered on stderr.
+  std::fprintf(stderr, "[%s] %.*s\n", levelName(level),
+               static_cast<int>(message.size()), message.data());
+  std::fflush(stderr);
+}
+
+std::atomic<LogLevel> g_level{LogLevel::Info};
+
+std::mutex g_sink_mutex;
+LogSink g_sink;   // empty => use defaultSink
+} // namespace
+
+LogLevel getDefaultLevel()
+{
+  LogLevel level = LogLevel::Info;
+
+  const char *env = std::getenv("LIBFREENECT2_LOGGER_LEVEL");
+  if (env != nullptr)
+  {
+    std::string s(env);
+    std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(::tolower(c)); });
 
-    if(env_logger_level_str == "debug")
-      level = spdlog::level::debug;
-    else if(env_logger_level_str == "info")
-      level = spdlog::level::info;
-    else if(env_logger_level_str == "warning" || env_logger_level_str == "warn")
-      level = spdlog::level::warn;
-    else if(env_logger_level_str == "error")
-      level = spdlog::level::err;
-    else if(env_logger_level_str == "none" || env_logger_level_str == "off")
-      level = spdlog::level::off;
+    if (s == "debug")
+      level = LogLevel::Debug;
+    else if (s == "info")
+      level = LogLevel::Info;
+    else if (s == "warning" || s == "warn")
+      level = LogLevel::Warning;
+    else if (s == "error")
+      level = LogLevel::Error;
+    else if (s == "none" || s == "off")
+      level = LogLevel::None;
   }
 
   return level;
 }
 
-std::shared_ptr<spdlog::logger> createConsoleLogger(spdlog::level::level_enum level)
+LogLevel getLogLevel()
 {
-  // Construct directly rather than via spdlog::stderr_logger_mt(), which
-  // registers the logger by name in spdlog's global registry and throws if
-  // called twice with the same name (it is: once for the default instance
-  // at library load, again whenever a caller does setGlobalLogger(createConsoleLogger(...))).
-  auto sink = std::make_shared<spdlog::sinks::stderr_sink_mt>();
-  auto logger = std::make_shared<spdlog::logger>("freenect2", sink);
-  logger->set_level(level);
-  logger->set_pattern("[%l] %v");
-  // The legacy ConsoleLogger flushed after every line; keep that behavior.
-  logger->flush_on(spdlog::level::debug);
-  return logger;
+  return g_level.load(std::memory_order_relaxed);
 }
 
-std::shared_ptr<spdlog::logger> createDefaultLogger()
+void setLogLevel(LogLevel level)
 {
-  return createConsoleLogger(getDefaultLevel());
+  g_level.store(level, std::memory_order_relaxed);
 }
 
-static std::shared_ptr<spdlog::logger> global_logger_ = createDefaultLogger();
-
-std::shared_ptr<spdlog::logger> getGlobalLogger()
+void setLogSink(LogSink sink)
 {
-  return std::atomic_load(&global_logger_);
+  std::scoped_lock lock(g_sink_mutex);
+  g_sink = std::move(sink);
 }
 
-void setGlobalLogger(std::shared_ptr<spdlog::logger> logger)
+namespace detail
 {
-  if(logger == nullptr)
-    logger = createDefaultLogger();
-  std::atomic_store(&global_logger_, std::move(logger));
+bool shouldLog(LogLevel level)
+{
+  const LogLevel current = g_level.load(std::memory_order_relaxed);
+  return current != LogLevel::None && level != LogLevel::None &&
+         static_cast<int>(level) <= static_cast<int>(current);
 }
 
-spdlog::level::level_enum getLogLevel()
+void emitLog(LogLevel level, std::string_view message)
 {
-  return getGlobalLogger()->level();
+  LogSink sink;
+  {
+    std::scoped_lock lock(g_sink_mutex);
+    sink = g_sink;
+  }
+  if (sink)
+    sink(level, message);
+  else
+    defaultSink(level, message);
 }
+} // namespace detail
 
-void setLogLevel(spdlog::level::level_enum level)
+// Initialise the threshold from the environment at load time.
+namespace
 {
-  getGlobalLogger()->set_level(level);
-}
+const bool g_level_initialised = [] {
+  g_level.store(getDefaultLevel(), std::memory_order_relaxed);
+  return true;
+}();
+} // namespace
 
 /** Timer for measuring performance. */
 class Timer
@@ -182,8 +215,10 @@ public:
     double sqsum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
     double stddev = std::sqrt(sqsum / (n-1));
 
-    auto logger = getGlobalLogger();
-    logger->info("[{}] {:.6g} {:.6g} {:.6g} {:.6g} {:.6g} mean={:.6g} std={:.6g} n={}", name, v[0], v[n/20], v[n/2], v[n - (n+19)/20], v[n-1], mean, stddev, n);
+    if (detail::shouldLog(LogLevel::Info))
+      detail::emitLog(LogLevel::Info,
+        fmt::format("[{}] {:.6g} {:.6g} {:.6g} {:.6g} {:.6g} mean={:.6g} std={:.6g} n={}",
+                    name, v[0], v[n/20], v[n/2], v[n - (n+19)/20], v[n-1], mean, stddev, n));
   }
 #else
   WithPerfLoggingImpl() = default;

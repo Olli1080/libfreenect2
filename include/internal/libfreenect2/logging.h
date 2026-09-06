@@ -24,18 +24,17 @@
  * either License.
  */
 
-/** @file logging.h Internal spdlog-native logging macros. */
+/** @file logging.h Internal logging macros. fmt only -- no spdlog. */
 
 #ifndef LOGGING_H_
 #define LOGGING_H_
 
 #include <iterator>
-#include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
 
 #include <libfreenect2/config.h>
 #include <libfreenect2/logger.h>
@@ -62,19 +61,24 @@ inline std::string getShortName(const char *func)
 
 namespace detail
 {
-// Level-gated single fmt pass into one buffer. The finished message reaches
-// spdlog as a raw string view, so user arguments are never re-parsed.
+/** True if `level` is at or above the current threshold (and not None). */
+FREENECT2_LOGGING_EXPORT bool shouldLog(LogLevel level);
+
+/** Hand one finished line (no trailing newline) to the active sink. */
+FREENECT2_LOGGING_EXPORT void emitLog(LogLevel level, std::string_view message);
+
+// One fmt pass into a local buffer; the finished text is a string view by the
+// time it crosses the DLL boundary, so user arguments are never re-parsed.
 template <typename... Args>
-void log(spdlog::level::level_enum level, const char *source, fmt::format_string<Args...> format, Args &&...args)
+void log(LogLevel level, const char *source, fmt::format_string<Args...> format, Args &&...args)
 {
-  auto logger = getGlobalLogger();
-  if (logger != nullptr && logger->should_log(level))
-  {
-    spdlog::memory_buf_t buf;
-    fmt::format_to(std::back_inserter(buf), "[{}] ", getShortName(source));
-    fmt::format_to(std::back_inserter(buf), format, std::forward<Args>(args)...);
-    logger->log(level, spdlog::string_view_t(buf.data(), buf.size()));
-  }
+  if (!shouldLog(level))
+    return;
+
+  fmt::memory_buffer buf;
+  fmt::format_to(std::back_inserter(buf), "[{}] ", getShortName(source));
+  fmt::format_to(std::back_inserter(buf), format, std::forward<Args>(args)...);
+  emitLog(level, std::string_view(buf.data(), buf.size()));
 }
 } // namespace detail
 
@@ -88,9 +92,9 @@ void log(spdlog::level::level_enum level, const char *source, fmt::format_string
 #define LOG_SOURCE ""
 #endif
 
-#define LOG_DEBUG(...)   ::libfreenect2::detail::log(spdlog::level::debug, LOG_SOURCE, __VA_ARGS__)
-#define LOG_INFO(...)    ::libfreenect2::detail::log(spdlog::level::info, LOG_SOURCE, __VA_ARGS__)
-#define LOG_WARNING(...) ::libfreenect2::detail::log(spdlog::level::warn, LOG_SOURCE, __VA_ARGS__)
-#define LOG_ERROR(...)   ::libfreenect2::detail::log(spdlog::level::err, LOG_SOURCE, __VA_ARGS__)
+#define LOG_DEBUG(...)   ::libfreenect2::detail::log(::libfreenect2::LogLevel::Debug,   LOG_SOURCE, __VA_ARGS__)
+#define LOG_INFO(...)    ::libfreenect2::detail::log(::libfreenect2::LogLevel::Info,    LOG_SOURCE, __VA_ARGS__)
+#define LOG_WARNING(...) ::libfreenect2::detail::log(::libfreenect2::LogLevel::Warning, LOG_SOURCE, __VA_ARGS__)
+#define LOG_ERROR(...)   ::libfreenect2::detail::log(::libfreenect2::LogLevel::Error,   LOG_SOURCE, __VA_ARGS__)
 
 #endif /* LOGGING_H_ */

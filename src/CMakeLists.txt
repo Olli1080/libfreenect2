@@ -84,7 +84,6 @@ target_sources(freenect2
 target_link_libraries(freenect2
   PUBLIC
     libusb::libusb-1.0
-    spdlog::spdlog
 )
 
 # --- Logging Library ---

@@ -26,11 +26,11 @@ target_link_libraries(freenect2_opencl
 
 if(VCPKG_MANIFEST_MODE)
   target_link_libraries(freenect2_opencl
-    PRIVATE OpenCL::OpenCL OpenCL::HeadersCpp spdlog::spdlog
+    PRIVATE OpenCL::OpenCL OpenCL::HeadersCpp
   )
 else()
   target_include_directories(freenect2_opencl PRIVATE ${OpenCL_INCLUDE_DIRS})
   target_link_libraries(freenect2_opencl
-    PRIVATE ${OpenCL_LIBRARIES} spdlog::spdlog
+    PRIVATE ${OpenCL_LIBRARIES}
   )
 endif()

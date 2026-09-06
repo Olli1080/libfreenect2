@@ -80,25 +80,30 @@ void sigusr1_handler(int s)
 
 //The following demonstrates how to create a custom file logger
 /// [logger]
+#include <cstdio>
 #include <cstdlib>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/basic_file_sink.h>
-std::shared_ptr<spdlog::logger> createFileLogger(const char *filename)
+#include <memory>
+#include <mutex>
+#include <string_view>
+libfreenect2::LogSink createFileSink(const char *filename)
 {
   if (filename == nullptr)
     return nullptr;
-  try
-  {
-    auto logger = spdlog::basic_logger_mt("freenect2_file", filename);
-    logger->set_level(spdlog::level::debug);
-    logger->set_pattern("[%l] %v");
-    logger->flush_on(spdlog::level::debug);
-    return logger;
-  }
-  catch (const spdlog::spdlog_ex &)
-  {
+
+  auto file = std::shared_ptr<std::FILE>(std::fopen(filename, "w"),
+                                         [](std::FILE *f) { if (f) std::fclose(f); });
+  if (!file)
     return nullptr;
-  }
+
+  auto mtx = std::make_shared<std::mutex>();
+  return [file, mtx](libfreenect2::LogLevel level, std::string_view message)
+  {
+    static const char *names[] = {"none", "error", "warning", "info", "debug"};
+    std::scoped_lock lock(*mtx);
+    std::fprintf(file.get(), "[%s] %.*s\n", names[static_cast<int>(level)],
+                 static_cast<int>(message.size()), message.data());
+    std::fflush(file.get());
+  };
 }
 /// [logger]
 
@@ -147,19 +152,17 @@ int main(int argc, char *argv[])
     binpath = program_path.substr(0, executable_name_idx);
   }
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
-  // avoid flooing the very slow Windows console with debug messages
-  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(spdlog::level::info));
-#else
-  // create a console logger with debug level (default is console logger with info level)
 /// [logging]
-  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(spdlog::level::debug));
-/// [logging]
+  // The library reads LIBFREENECT2_LOGGER_LEVEL on load; only override it here
+  // if the user did not set it.
+#if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32__)
+  if (getenv("LIBFREENECT2_LOGGER_LEVEL") == nullptr)
+    libfreenect2::setLogLevel(libfreenect2::LogLevel::Debug);
 #endif
+/// [logging]
 /// [file logging]
-  auto filelogger = createFileLogger(getenv("LOGFILE"));
-  if (filelogger != nullptr)
-    libfreenect2::setGlobalLogger(filelogger);
+  if (auto sink = createFileSink(getenv("LOGFILE")))
+    libfreenect2::setLogSink(std::move(sink));
 /// [file logging]
 
 /// [context]
