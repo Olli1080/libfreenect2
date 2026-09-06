@@ -1,6 +1,6 @@
 {
   "name": "libfreenect2",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Open source drivers for the Kinect for Windows v2 device (Olli1080 fork: adds Vulkan depth processing, microphone-array audio capture, and other backends beyond upstream OpenKinect/libfreenect2)",
   "homepage": "https://github.com/Olli1080/libfreenect2",
   "license": "GPL-2.0-only OR Apache-2.0",

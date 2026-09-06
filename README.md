@@ -47,6 +47,36 @@ Watch the OpenKinect wiki at www.openkinect.org and the mailing list at https://
 
 The API reference documentation is provided here https://openkinect.github.io/libfreenect2/.
 
+### Migrating to 0.3 (this fork)
+
+A batch of public-API cleanups landed together with a SONAME bump:
+
+* **Logging no longer exposes spdlog.** `<libfreenect2/logger.h>` now has no
+  third-party dependency: `enum class LogLevel`, `setLogLevel(LogLevel)`
+  (`LogLevel::None` silences the library), and `setLogSink(std::function<void(LogLevel,
+  std::string_view)>)`. To hand off to an spdlog logger you own, include the new
+  opt-in `<libfreenect2/logger_spdlog.h>` and call `setSpdlogLogger(...)`; that is
+  the only header that needs spdlog. `getGlobalLogger`/`setGlobalLogger` /
+  `createConsoleLogger(spdlog::level::...)` moved to `logger_spdlog.h`.
+* **One pipeline vocabulary.** `<libfreenect2/pipeline_factory.h>` adds
+  `createPacketPipeline("cuda", gpu_id)` and `getAvailablePacketPipelines()`. The
+  canonical names are `cpu gl cl clkde cuda cudakde vk` (with aliases `opengl`,
+  `opencl`, `opencl_kde`, `cl_kde`, `cuda_kde`, `vulkan`); `LIBFREENECT2_PIPELINE`
+  accepts all of them. `registerPacketPipeline()` is the hook a future backend
+  plugin loader will use.
+* **`SyncMultiFrameListener` buffering is configurable:**
+  `SyncMultiFrameListener(frame_types, capacity = 1, overflow_mode = FrameQueueMode::DropNew)`.
+  `capacity == 1` is the unchanged zero-copy behaviour; `>= 2` buffers copies so a
+  slow consumer drops fewer frames.
+* Smaller: `stop()` / `close()` are no longer `[[nodiscard]]`; `startStreams()`
+  defaults both streams on; there is a new `Frame(width, height, Frame::Format)`
+  constructor; `getFrame(FrameMap, Type)` returns `nullptr` instead of inserting.
+* **pyfreenect2:** `wait_for_new_frame()` returns `None` on timeout instead of
+  raising; `available_pipelines()` returns the canonical names and there is a new
+  `create_pipeline(name, gpu_device_id)`; `Frame.Type` / `Frame.Format` mirror the
+  top-level enums; `set_log_sink(callable)` is new. The multi-device
+  interpreter-shutdown crash is fixed.
+
 ## Requirements
 
 ### Hardware requirements

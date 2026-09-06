@@ -100,29 +100,29 @@ This shows how to set up the logger and logging level.
 
 @snippet Protonect.cpp logging
 
-The logging backend is %spdlog. The default logger reads the
-`LIBFREENECT2_LOGGER_LEVEL` environment variable (`none`, `error`, `warning`,
-`info`, `debug`; default `info`).
+`<libfreenect2/logger.h>` has no third-party dependency. The threshold starts
+from the `LIBFREENECT2_LOGGER_LEVEL` environment variable (`none`, `error`,
+`warning`, `info`, `debug`; default `info`) and can be changed at runtime with
+`setLogLevel(LogLevel)` -- `LogLevel::None` silences the library without
+touching your own logging.
 
-You can pass any %spdlog logger via `setGlobalLogger` to redirect
-%libfreenect2's log messages to desired places.
-
-The library keeps its own dedicated logger instance and never uses
-%spdlog's default logger. You can adjust the level of that instance at
-runtime with `getLogLevel`/`setLogLevel`; passing `spdlog::level::off`
-to `setLogLevel` disables all logging from %libfreenect2 without touching
-your application's loggers.
-
-Here is an example to save log messages to a file.
+Each finished line is handed to a sink; the built-in sink writes to stderr.
+Install your own with `setLogSink(std::function<void(LogLevel, std::string_view)>)`
+(passing `nullptr` restores the default). Here is a sink that appends to a file:
 
 @snippet Protonect.cpp logger
 
-And use it
+And installing it:
 
 @snippet Protonect.cpp file logging
 
-%libfreenect2 uses a single global logger regardless of number of contexts and
-devices. %spdlog loggers are thread-safe.
+To route output through an %spdlog logger you own (rotating files, syslog, a
+network sink), include the opt-in `<libfreenect2/logger_spdlog.h>` and call
+`setSpdlogLogger(logger)`. That is the only libfreenect2 header that depends on
+%spdlog.
+
+The threshold and sink are process-wide, regardless of the number of contexts
+and devices; the sink is called from whichever thread produced the message.
 
 Initialize and Discover Devices
 -------------------------------
@@ -136,10 +136,15 @@ devices.
 
 @snippet Protonect.cpp discovery
 
-Also, you can create a specific [PacketPipeline](@ref libfreenect2::PacketPipeline)
-instead using the default one for opening the device. Alternatives include
-[OpenGLPacketPipeline](@ref libfreenect2::OpenGLPacketPipeline),
-[OpenCLPacketPipeline](@ref libfreenect2::OpenCLPacketPipeline), etc.
+Instead of the compile-time default you can pick a specific
+[PacketPipeline](@ref libfreenect2::PacketPipeline). Construct one of the
+concrete classes ([OpenGLPacketPipeline](@ref libfreenect2::OpenGLPacketPipeline),
+[CudaPacketPipeline](@ref libfreenect2::CudaPacketPipeline), ...) directly, or
+build one by name with
+[createPacketPipeline()](@ref libfreenect2::createPacketPipeline) from
+`<libfreenect2/pipeline_factory.h>` -- the same `cpu`/`gl`/`cl`/`clkde`/`cuda`/
+`cudakde`/`vk` tokens the `Protonect` CLI and `LIBFREENECT2_PIPELINE` accept.
+Each `openDevice()` call needs its own fresh pipeline.
 
 @snippet Protonect.cpp pipeline
 
