@@ -24,21 +24,23 @@ Features
 - IR and depth image processing
 - Registration of color and depth images
 - Multiple GPU and hardware acceleration implementations for image processing
+  (CPU, OpenGL, OpenCL, CUDA, Vulkan)
+- Concurrent capture from multiple Kinects in one process
+- Microphone-array audio capture with direction-of-arrival / beamforming DSP
+  (`freenect2_audio`, `ENABLE_AUDIO`)
+- Python bindings (`pyfreenect2`, `BUILD_PYTHON_BINDINGS`)
 
 ### Issues and Future Work
 
-- Audio. Raw audio is accessible via Linux USB audio. There is no support for
-  the calibrated directional audio.
 - Unstable USB and crashes. Due to differences in driver support, USB problems
   can happen a lot. Error handling in %libfreenect2 is not fully verified for
   production use.
 - Firmware upload. The protocol has been reverse engineered, but use Windows
   for this right now.
-- Example of multiple Kinects.
 - Example utility of dumping image frames.
 - API for on-demand processing.
 - Verification of systematic errors through accurate calibration.
-- Bindings for C, Python, Java, etc.
+- Bindings for C, Java, etc. (Python is provided by `pyfreenect2`).
 
 Getting Started
 ===============
@@ -48,7 +50,10 @@ which nicely organizes classes according to their functionalities.
 
 Example programs can be found in the source distribution under the `examples`
 directory. There also includes an example CMake build system for a standalone
-application that uses %libfreenect2 binary installation.
+application that uses %libfreenect2 binary installation. `Protonect` is the
+reference single-device application; `MultiKinect` opens every connected
+Kinect at once (one pipeline and capture thread per device) and reports
+per-device throughput, with an optional side-by-side viewer.
 
 Many internal details are hidden from this public API. For details on Kinect
 v2's USB protocols, depth decoding algorithms, calibration algorithms, and how
@@ -65,7 +70,9 @@ programmers:
 * `LIBFREENECT2_LOGGER_LEVEL`: The default logging level if not explicitly set
   by the code.
 * `LIBFREENECT2_PIPELINE`: The default pipeline if not explicitly set by the
-  code.
+  code. Accepted values are `cpu`, `gl`, `cl`, `clkde`, `cuda`, `cudakde`,
+  `vk` (same tokens as `Protonect`); unavailable ones are ignored with a
+  warning.
 * `LIBFREENECT2_RGB_TRANSFER_SIZE`, `LIBFREENECT2_RGB_TRANSFERS`,
   `LIBFREENECT2_IR_PACKETS`, `LIBFREENECT2_IR_TRANSFERS`: Tuning the USB buffer
   sizes. Use only if you know what you are doing.

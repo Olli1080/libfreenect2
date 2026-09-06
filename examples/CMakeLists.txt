@@ -51,6 +51,28 @@ endif()
 include(GNUInstallDirs)
 install(TARGETS Protonect DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+# --- Multiple-Kinect Example ---
+# Opens every connected Kinect v2 at once (one fresh pipeline + one capture
+# thread per device) and reports per-device throughput. Fills the gap
+# doc/mainpage.dox lists as "Example of multiple Kinects". Its optional
+# -viewer (one OpenCV window, an RGB + colourised-depth panel per device) is
+# built only when OpenCV is available; otherwise the example is headless.
+add_executable(MultiKinect MultiKinect.cpp)
+target_compile_features(MultiKinect PRIVATE cxx_std_17)
+target_link_libraries(MultiKinect PRIVATE freenect2)
+
+find_package(OpenCV QUIET COMPONENTS core imgproc highgui)
+if(OpenCV_FOUND)
+  target_compile_definitions(MultiKinect PRIVATE MULTIKINECT_WITH_OPENCV=1)
+  target_include_directories(MultiKinect PRIVATE ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(MultiKinect PRIVATE ${OpenCV_LIBS})
+  message(STATUS "  MultiKinect: -viewer enabled (OpenCV ${OpenCV_VERSION})")
+else()
+  message(STATUS "  MultiKinect: headless only (OpenCV not found)")
+endif()
+
+install(TARGETS MultiKinect DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 # --- Audio Capture Example ---
 if(TARGET freenect2_audio)
   add_executable(AudioCapture AudioCapture.cpp)

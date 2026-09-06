@@ -36,7 +36,7 @@ This fork ([Olli1080/libfreenect2](https://github.com/Olli1080/libfreenect2)) ad
 * microphone-array audio capture with direction-of-arrival/beamforming DSP (`ENABLE_AUDIO`)
 * a VA-API hardware JPEG decode backend for Intel GPUs on Linux (`ENABLE_VAAPI`, off by default)
 * `pyfreenect2`, pybind11-based Python bindings (`BUILD_PYTHON_BINDINGS`, off by default) — see [Python bindings](README.md#python-bindings)
-* example apps: a PCL point-cloud viewer (`BUILD_PCL_EXAMPLE`), ONNX Runtime object-detection/pose/hand-tracking demos (`BUILD_ONNX_EXAMPLES`), and a network streaming/recording tool (`BUILD_STREAMER_RECORDER`)
+* example apps: a multi-Kinect capture/throughput demo with an optional side-by-side viewer ([examples/MultiKinect.cpp](examples/MultiKinect.cpp), plus [examples/python/multikinect.py](examples/python/multikinect.py)), a PCL point-cloud viewer (`BUILD_PCL_EXAMPLE`), ONNX Runtime object-detection/pose/hand-tracking demos (`BUILD_ONNX_EXAMPLES`), and a network streaming/recording tool (`BUILD_STREAMER_RECORDER`)
 
 See [cmake/Options.cmake](cmake/Options.cmake) for the full list of build options.
 
@@ -60,6 +60,8 @@ Virtual machines likely do not work, because USB 3.0 isochronous transfer is qui
 ##### Requirements for multiple Kinects
 
 It has been reported to work for up to 5 devices on a high-end PC using multiple separate PCI Express USB3 expansion cards (with NEC controller chip). If you're using Linux, you may have to [increase USBFS memory buffers](https://github.com/OpenKinect/libfreenect2/wiki/Troubleshooting#multiple-kinects-try-increasing-usbfs-buffer-size). Depending on the number of Kinects, you may need to use an even larger buffer size. If you're using an expansion card, make sure it's not plugged into an PCI-E x1 slot. A single lane doesn't have enough bandwidth. x8 or x16 slots usually work.
+
+In practice a single modern host controller can also drive a few Kinects at once — three K4W2 streaming color + depth at 30 fps have been run off one Intel USB 3.2 xHCI controller, with occasional brief frame-rate dips under bus contention. Separate controllers remain the recommendation as the device count grows. `MultiKinect` (see [examples/MultiKinect.cpp](examples/MultiKinect.cpp)) opens every connected device and prints a per-device FPS table, which is the quickest way to see whether your bus keeps up.
 
 ### Operating system requirements
 
