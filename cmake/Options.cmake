@@ -29,6 +29,10 @@ if(ENABLE_OPENGL)
   list(APPEND VCPKG_MANIFEST_FEATURES "opengl")
 endif()
 
+if(BUILD_EXAMPLES)
+  list(APPEND VCPKG_MANIFEST_FEATURES "examples")
+endif()
+
 if(BUILD_OPENNI2_DRIVER)
   list(APPEND VCPKG_MANIFEST_FEATURES "openni2")
 endif()

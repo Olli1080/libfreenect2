@@ -9,10 +9,13 @@ else()
   find_package(freenect2 REQUIRED)
 endif()
 
+# Shared by the examples that take a command line.
+find_package(argparse CONFIG REQUIRED)
+
 add_executable(Protonect Protonect.cpp)
 
 target_compile_features(Protonect PRIVATE cxx_std_17)
-target_link_libraries(Protonect PRIVATE freenect2)
+target_link_libraries(Protonect PRIVATE freenect2 argparse::argparse)
 
 # OpenGL viewer support
 if(ENABLE_OPENGL)
@@ -59,7 +62,7 @@ install(TARGETS Protonect DESTINATION ${CMAKE_INSTALL_BINDIR})
 # built only when OpenCV is available; otherwise the example is headless.
 add_executable(MultiKinect MultiKinect.cpp)
 target_compile_features(MultiKinect PRIVATE cxx_std_17)
-target_link_libraries(MultiKinect PRIVATE freenect2)
+target_link_libraries(MultiKinect PRIVATE freenect2 argparse::argparse)
 
 find_package(OpenCV QUIET COMPONENTS core imgproc highgui)
 if(OpenCV_FOUND)
@@ -113,7 +116,7 @@ if(BUILD_PCL_EXAMPLE)
   target_compile_features(PCLPointCloud PRIVATE cxx_std_17)
   target_include_directories(PCLPointCloud PRIVATE ${PCL_INCLUDE_DIRS})
   target_compile_definitions(PCLPointCloud PRIVATE ${PCL_DEFINITIONS})
-  target_link_libraries(PCLPointCloud PRIVATE freenect2 ${PCL_LIBRARIES})
+  target_link_libraries(PCLPointCloud PRIVATE freenect2 argparse::argparse ${PCL_LIBRARIES})
 
   install(TARGETS PCLPointCloud DESTINATION ${CMAKE_INSTALL_BINDIR})
 

@@ -7,6 +7,12 @@
     "spdlog"
   ],
   "features": {
+    "examples": {
+      "description": "Build the example programs (CLI parsing)",
+      "dependencies": [
+        "argparse"
+      ]
+    },
     "opengl": {
       "description": "Enable OpenGL depth processing and viewer (requires GLFW3)",
       "dependencies": [

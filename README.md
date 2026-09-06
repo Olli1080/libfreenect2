@@ -71,6 +71,12 @@ A batch of public-API cleanups landed together with a SONAME bump:
 * Smaller: `stop()` / `close()` are no longer `[[nodiscard]]`; `startStreams()`
   defaults both streams on; there is a new `Frame(width, height, Frame::Format)`
   constructor; `getFrame(FrameMap, Type)` returns `nullptr` instead of inserting.
+* **Example CLIs are parsed with a library now** (Python examples: stdlib
+  `argparse`; `Protonect` / `MultiKinect` / `PCLPointCloud`: p-ranav/argparse,
+  pulled by the vcpkg `examples` feature). `--help` works everywhere. `Protonect`
+  changes: `-gpu <id>` (space, not `-gpu=<id>`), `-h`/`--help` and `-v`/`--version`
+  (not `-help`/`-version`), and the pipeline token + serial must stay together
+  (`Protonect gl <serial> -noviewer`, not split by an option).
 * **pyfreenect2:** `wait_for_new_frame()` returns `None` on timeout instead of
   raising; `available_pipelines()` returns the canonical names and there is a new
   `create_pipeline(name, gpu_device_id)`; `Frame.Type` / `Frame.Format` mirror the

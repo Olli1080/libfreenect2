@@ -10,6 +10,8 @@
 #include <cstring>
 #include <iostream>
 
+#include <argparse/argparse.hpp>
+
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/packet_pipeline.h>
@@ -63,14 +65,30 @@ static PointCloud::Ptr frame_to_cloud(const libfreenect2::Frame& undistorted,
 
 int main(int argc, char** argv)
 {
-	libfreenect2::PacketPipeline* pipeline = nullptr;
-	if (argc > 1)
+	argparse::ArgumentParser program("PCLPointCloud", LIBFREENECT2_VERSION);
+	program.add_description("Stream a registered PCL point cloud from the first Kinect v2.");
+	program.add_argument("pipeline").metavar("[pipeline]").default_value(std::string{})
+	    .help("depth pipeline: cpu | gl | cl | clkde | cuda | cudakde | vk (default: compile-time default)");
+	try
 	{
-		std::string arg(argv[1]);
+		program.parse_args(argc, argv);
+	}
+	catch (const std::exception& err)
+	{
+		std::cerr << err.what() << "\n\n" << program;
+		return 1;
+	}
+
+	libfreenect2::PacketPipeline* pipeline = nullptr;
+	if (const auto arg = program.get<std::string>("pipeline"); !arg.empty())
+	{
 		pipeline = libfreenect2::createPacketPipeline(arg).release();
 		if (!pipeline)
+		{
 			std::cerr << "Unknown/unavailable pipeline '" << arg
 			          << "' (expected cpu | gl | cl | clkde | cuda | cudakde | vk)\n";
+			return 1;
+		}
 	}
 
 	libfreenect2::Freenect2 freenect2;

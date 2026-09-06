@@ -73,20 +73,12 @@
  *    controller the per-device frame rate in the table will sag once the bus
  *    saturates.
  *
- * Usage:
- *   MultiKinect [gl | cl | clkde | cuda | cudakde | vk | cpu] [-gpu=<id>]
- *               [-frames <N>] [-capacity <N>] [-norgb | -nodepth] [-viewer]
- *               [<serial> ...]
- *
- *   No pipeline arg      -> libfreenect2's compile-time default per device.
- *   Trailing digit args  -> restrict to those serials (default: all found).
- *   -frames <N>          -> stop once every device has delivered N frames.
- *   -capacity <N>        -> per-device listener buffer depth (default 1).
- *   -viewer              -> one OpenCV window, one panel per device; press q
- *                          or Esc to close. Available only when the example
- *                          was built with OpenCV. Prefer a non-gl pipeline
- *                          with -viewer: the gl depth pipeline opens its own
- *                          GL window per device on top of the viewer.
+ * Run with --help for the argument list (parsed with p-ranav/argparse). The
+ * pipeline token and the device serials are bare positionals, kept together;
+ * no pipeline arg uses libfreenect2's compile-time default, no serials opens
+ * every device found. -viewer needs an OpenCV build; prefer a non-gl pipeline
+ * with it (the gl depth pipeline opens its own GL window per device on top of
+ * the viewer). -capacity <N> is the per-device listener buffer depth.
  */
 
 #include <atomic>
@@ -101,6 +93,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <argparse/argparse.hpp>
 
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
@@ -247,9 +241,31 @@ void captureLoop(DeviceRunner *r, bool viewer_enabled)
 int main(int argc, char *argv[])
 {
   std::cerr << "Version: " << LIBFREENECT2_VERSION << std::endl;
-  std::cerr << "Usage: " << argv[0]
-            << " [gl | cl | clkde | cuda | cudakde | vk | cpu] [-gpu=<id>]"
-            << " [-frames <N>] [-norgb | -nodepth] [-viewer] [<serial> ...]" << std::endl;
+
+  argparse::ArgumentParser program("MultiKinect", LIBFREENECT2_VERSION);
+  program.add_description("Open every connected Kinect v2 at once and report per-device throughput.");
+  program.add_epilog("The pipeline token and the device serials are bare positionals, kept together.");
+  program.add_argument("-gpu").metavar("<id>").scan<'i', int>().default_value(-1)
+      .help("GPU device id for the cl/cuda/vk pipelines");
+  program.add_argument("-frames").metavar("<N>").scan<'u', std::size_t>()
+      .help("stop once every device has delivered N frames");
+  program.add_argument("-capacity").metavar("<N>").scan<'u', std::size_t>().default_value<std::size_t>(1)
+      .help("per-device listener buffer depth (default 1)");
+  program.add_argument("-norgb").flag().help("disable the color stream");
+  program.add_argument("-nodepth").flag().help("disable the depth stream");
+  program.add_argument("-viewer").flag().help("one OpenCV window, RGB + depth per device");
+  program.add_argument("tokens").nargs(argparse::nargs_pattern::any).metavar("[pipeline] [serial ...]")
+      .help("a pipeline token and/or the device serials to open (default: all)");
+
+  try
+  {
+    program.parse_args(argc, argv);
+  }
+  catch (const std::exception &err)
+  {
+    std::cerr << err.what() << "\n\n" << program;
+    return 1;
+  }
 
   // The library honours LIBFREENECT2_LOGGER_LEVEL on load; raise to Debug for
   // development only when the user has not set it, and not on the slow
@@ -259,46 +275,35 @@ int main(int argc, char *argv[])
     libfreenect2::setLogLevel(libfreenect2::LogLevel::Debug);
 #endif
 
-  std::string pipeline_name;
-  int gpuId = -1;
-  size_t framemax = static_cast<size_t>(-1);
-  std::size_t capacity = 1;
-  bool enable_rgb = true;
-  bool enable_depth = true;
-  bool viewer_enabled = false;
-  std::vector<std::string> wanted_serials;
+  const int gpuId = program.get<int>("-gpu");
+  const std::size_t capacity = std::max<std::size_t>(1, program.get<std::size_t>("-capacity"));
+  const bool enable_rgb = !program.get<bool>("-norgb");
+  const bool enable_depth = !program.get<bool>("-nodepth");
+  bool viewer_enabled = program.get<bool>("-viewer");
 
-  for (int i = 1; i < argc; ++i)
+  size_t framemax = static_cast<size_t>(-1);
+  if (auto f = program.present<std::size_t>("-frames"))
   {
-    const std::string arg(argv[i]);
-    if (arg == "-help" || arg == "--help" || arg == "-h")
-      return 0;
-    else if (libfreenect2::hasPacketPipeline(arg))
-      pipeline_name = arg;
-    else if (arg.rfind("-gpu=", 0) == 0)
-      gpuId = std::atoi(arg.c_str() + 5);
-    else if (arg == "-frames")
+    if (*f == 0) { std::cerr << "invalid frame count '0'" << std::endl; return -1; }
+    framemax = *f;
+  }
+
+  std::string pipeline_name;
+  std::vector<std::string> wanted_serials;
+  if (auto tokens = program.present<std::vector<std::string>>("tokens"))
+  {
+    for (const auto &tok : *tokens)
     {
-      if (++i >= argc) { std::cerr << "-frames needs a value" << std::endl; return -1; }
-      framemax = std::strtoul(argv[i], nullptr, 0);
-      if (framemax == 0) { std::cerr << "invalid frame count" << std::endl; return -1; }
+      if (tok.find_first_not_of("0123456789") == std::string::npos)
+        wanted_serials.push_back(tok);
+      else if (libfreenect2::hasPacketPipeline(tok))
+        pipeline_name = tok;
+      else
+      {
+        std::cerr << "unrecognized argument: " << tok << "\n\n" << program;
+        return 1;
+      }
     }
-    else if (arg == "-capacity")
-    {
-      if (++i >= argc) { std::cerr << "-capacity needs a value" << std::endl; return -1; }
-      capacity = std::strtoul(argv[i], nullptr, 0);
-      if (capacity < 1) capacity = 1;
-    }
-    else if (arg == "-norgb" || arg == "--norgb")
-      enable_rgb = false;
-    else if (arg == "-nodepth" || arg == "--nodepth")
-      enable_depth = false;
-    else if (arg == "-viewer" || arg == "--viewer")
-      viewer_enabled = true;
-    else if (arg.find_first_not_of("0123456789") == std::string::npos)
-      wanted_serials.push_back(arg);
-    else
-      std::cerr << "Unknown argument: " << arg << std::endl;
   }
 
   if (!enable_rgb && !enable_depth)

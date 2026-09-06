@@ -30,6 +30,8 @@
 #include <cstdlib>
 #include <signal.h>
 
+#include <argparse/argparse.hpp>
+
 /// [headers]
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
@@ -101,32 +103,37 @@ libfreenect2::LogSink createFileSink(const char *filename)
 
 /// [main]
 /**
- * Main application entry point.
- *
- * Accepted argumemnts:
- * - cpu Perform depth processing with the CPU.
- * - gl  Perform depth processing with OpenGL.
- * - cl  Perform depth processing with OpenCL.
- * - <number> Serial number of the device to open.
- * - -noviewer Disable viewer window.
+ * Main application entry point. Run with --help for the argument list
+ * (parsed with p-ranav/argparse; the pipeline token and the device serial
+ * are bare positionals, kept together, e.g. `Protonect gl <serial> -noviewer`).
  */
 int main(int argc, char *argv[])
 /// [main]
 {
-  std::string program_path(argv[0]);
   std::cerr << "Version: " << LIBFREENECT2_VERSION << std::endl;
-  std::cerr << "Environment variables: LOGFILE=<protonect.log>" << std::endl;
-  std::cerr << "Usage: " << program_path << " [-gpu=<id>] [gl | cl | clkde | cuda | cudakde | vk | cpu] [<device serial>]" << std::endl;
-  std::cerr << "        [-noviewer] [-norgb | -nodepth] [-help] [-version]" << std::endl;
-  std::cerr << "        [-frames <number of frames to process>]" << std::endl;
-  std::cerr << "To pause and unpause: pkill -USR1 Protonect" << std::endl;
-  size_t executable_name_idx = program_path.rfind("Protonect");
 
-  std::string binpath = "/";
+  argparse::ArgumentParser program("Protonect", LIBFREENECT2_VERSION);
+  program.add_description("Kinect v2 capture demo (color, IR/depth, registration).");
+  program.add_epilog("Environment: LIBFREENECT2_LOGGER_LEVEL, LOGFILE.\n"
+                     "Pause/unpause on POSIX: pkill -USR1 Protonect");
+  program.add_argument("-gpu").metavar("<id>").scan<'i', int>().default_value(-1)
+      .help("GPU device id for the cl/cuda/vk pipelines");
+  program.add_argument("-frames").metavar("<N>").scan<'u', std::size_t>()
+      .help("stop after N frames");
+  program.add_argument("-noviewer").flag().help("disable the viewer window");
+  program.add_argument("-norgb").flag().help("disable the color stream");
+  program.add_argument("-nodepth").flag().help("disable the depth stream");
+  program.add_argument("tokens").nargs(argparse::nargs_pattern::any).metavar("[pipeline] [serial]")
+      .help("a pipeline token (cpu/gl/cl/clkde/cuda/cudakde/vk) and/or a device serial");
 
-  if(executable_name_idx != std::string::npos)
+  try
   {
-    binpath = program_path.substr(0, executable_name_idx);
+    program.parse_args(argc, argv);
+  }
+  catch (const std::exception &err)
+  {
+    std::cerr << err.what() << "\n\n" << program;
+    return 1;
   }
 
 /// [logging]
@@ -149,60 +156,39 @@ int main(int argc, char *argv[])
   libfreenect2::PacketPipeline *pipeline = nullptr;
 /// [context]
 
-  std::string serial = "";
-  std::string pipeline_name = "";
+  const int deviceId = program.get<int>("-gpu");
+  const bool viewer_enabled = !program.get<bool>("-noviewer");
+  const bool enable_rgb = !program.get<bool>("-norgb");
+  const bool enable_depth = !program.get<bool>("-nodepth");
 
-  bool viewer_enabled = true;
-  bool enable_rgb = true;
-  bool enable_depth = true;
-  int deviceId = -1;
-  size_t framemax = -1;
-
-  for(int argI = 1; argI < argc; ++argI)
+  size_t framemax = static_cast<size_t>(-1);
+  if (auto f = program.present<std::size_t>("-frames"))
   {
-    const std::string arg(argv[argI]);
+    if (*f == 0)
+    {
+      std::cerr << "invalid frame count '0'" << std::endl;
+      return -1;
+    }
+    framemax = *f;
+  }
 
-    if(arg == "-help" || arg == "--help" || arg == "-h" || arg == "-v" || arg == "--version" || arg == "-version")
+  // The pipeline token and device serial are both bare positionals; tell them
+  // apart the way protonect.py does (all-digits => serial).
+  std::string serial;
+  std::string pipeline_name;
+  if (auto tokens = program.present<std::vector<std::string>>("tokens"))
+  {
+    for (const auto &tok : *tokens)
     {
-      // Just let the initial lines display at the beginning of main
-      return 0;
-    }
-    else if(arg.find("-gpu=") == 0)
-    {
-      deviceId = atoi(argv[argI] + 5);
-    }
-    else if(libfreenect2::hasPacketPipeline(arg))
-    {
-      pipeline_name = arg;
-    }
-    else if(arg.find_first_not_of("0123456789") == std::string::npos) //check if parameter could be a serial number
-    {
-      serial = arg;
-    }
-    else if(arg == "-noviewer" || arg == "--noviewer")
-    {
-      viewer_enabled = false;
-    }
-    else if(arg == "-norgb" || arg == "--norgb")
-    {
-      enable_rgb = false;
-    }
-    else if(arg == "-nodepth" || arg == "--nodepth")
-    {
-      enable_depth = false;
-    }
-    else if(arg == "-frames")
-    {
-      ++argI;
-      framemax = strtol(argv[argI], nullptr, 0);
-      if (framemax == 0) {
-        std::cerr << "invalid frame count '" << argv[argI] << "'" << std::endl;
-        return -1;
+      if (tok.find_first_not_of("0123456789") == std::string::npos)
+        serial = tok;
+      else if (libfreenect2::hasPacketPipeline(tok))
+        pipeline_name = tok;
+      else
+      {
+        std::cerr << "unrecognized argument: " << tok << "\n\n" << program;
+        return 1;
       }
-    }
-    else
-    {
-      std::cout << "Unknown argument: " << arg << std::endl;
     }
   }
 
