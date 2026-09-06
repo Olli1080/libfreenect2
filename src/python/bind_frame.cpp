@@ -142,6 +142,9 @@ void bindFrame(py::module_ &m)
          "Allocate a new, independently-owned frame buffer -- for use as an "
          "output argument to Registration.apply()/undistort_depth() "
          "(e.g. Frame(512, 424, 4) for `undistorted`/`registered`).")
+    .def(py::init<size_t, size_t, Frame::Format>(), py::arg("width"), py::arg("height"), py::arg("format"),
+         "Allocate a frame of a known FrameFormat -- bytes_per_pixel is "
+         "derived (Float/BGRX/RGBX = 4, Gray = 1) and format is stored.")
     .def_readonly("width", &Frame::width)
     .def_readonly("height", &Frame::height)
     .def_readonly("bytes_per_pixel", &Frame::bytes_per_pixel)

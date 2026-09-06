@@ -197,7 +197,7 @@ void bindCore(py::module_ &m)
     .def("get_color_setting_float", &Freenect2Device::getColorSettingFloat, py::arg("cmd"))
     .def("set_led_status", &Freenect2Device::setLedStatus, py::arg("led"))
     .def("start", &deviceStart, "Start both RGB and depth streams. Returns False on failure.")
-    .def("start_streams", &deviceStartStreams, py::arg("rgb"), py::arg("depth"))
+    .def("start_streams", &deviceStartStreams, py::arg("rgb") = true, py::arg("depth") = true)
     .def("stop", &deviceStop)
     .def("close", &deviceClose);
 

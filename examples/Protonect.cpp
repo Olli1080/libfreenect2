@@ -64,7 +64,7 @@ void sigusr1_handler(int s)
     return;
 /// [pause]
   if (protonect_paused)
-    devtopause->start();
+    (void)devtopause->start();
   else
     devtopause->stop();
   protonect_paused = !protonect_paused;

@@ -33,6 +33,30 @@
 namespace libfreenect2
 {
 
+namespace
+{
+size_t bytesForFormat(Frame::Format format)
+{
+  switch (format)
+  {
+    case Frame::Float:
+    case Frame::BGRX:
+    case Frame::RGBX:
+      return 4;
+    case Frame::Gray:
+      return 1;
+    default:   // Raw (size, not per-pixel) / Invalid -- caller should use the other ctor
+      return 0;
+  }
+}
+} // namespace
+
+Frame::Frame(size_t width, size_t height, Format format, unsigned char *data_) :
+  Frame(width, height, bytesForFormat(format), data_)
+{
+  this->format = format;
+}
+
 Frame::Frame(size_t width, size_t height, size_t bytes_per_pixel, unsigned char *data_) :
   width(width),
   height(height),

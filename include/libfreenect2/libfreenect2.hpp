@@ -209,24 +209,27 @@ public:
 
   /** Start data processing with or without some streams.
    * FrameListener will receive enabled frames when the device is running.
+   * With both defaults this is equivalent to start().
    *
    * @param rgb Whether to enable RGB stream.
    * @param depth Whether to enable depth stream.
    * @return true if ok, false if error.
    */
-  [[nodiscard]] virtual bool startStreams(bool rgb, bool depth) = 0;
+  [[nodiscard]] virtual bool startStreams(bool rgb = true, bool depth = true) = 0;
 
-  /** Stop data processing.
+  /** Stop data processing. Best-effort; the return value is informational
+   * and safe to ignore.
    *
    * @return true if ok, false if error.
    */
-  [[nodiscard]] virtual bool stop() = 0;
+  virtual bool stop() = 0;
 
-  /** Shut down the device.
+  /** Shut down the device. Best-effort; the return value is informational
+   * and safe to ignore.
    *
    * @return true if ok, false if error.
    */
-  [[nodiscard]] virtual bool close() = 0;
+  virtual bool close() = 0;
 
   /** For use by companion libraries that need to share this device's
    * already-open USB session rather than opening their own (e.g.
@@ -286,13 +289,15 @@ public:
   std::string getDefaultDeviceSerialNumber();
 
   /** Open device by index with default pipeline.
-   * @param idx Index number. Index numbers are not determinstic during enumeration.
+   * @param idx Index number. The index-to-device mapping is not stable across
+   *   enumerateDevices() calls; prefer openDevice(serial) for anything that
+   *   needs to reopen a specific sensor.
    * @return New device object, or NULL on failure
    */
   [[nodiscard]] Freenect2Device *openDevice(int idx);
 
   /** Open device by index.
-   * @param idx Index number. Index numbers are not determinstic during enumeration.
+   * @param idx Index number. See openDevice(int) about index stability.
    * @param factory New PacketPipeline instance. This is always automatically freed.
    * @return New device object, or NULL on failure
    */

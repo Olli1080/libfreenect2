@@ -87,6 +87,14 @@ class FREENECT2_LOGGING_EXPORT Frame
    * @param data_ Memory to store frame data. If `NULL`, new memory is allocated.
    */
   Frame(size_t width, size_t height, size_t bytes_per_pixel, unsigned char *data_ = nullptr);
+
+  /** Construct a frame of a known pixel format: `bytes_per_pixel` is derived
+   * from `format` (Float/BGRX/RGBX = 4, Gray = 1) and `format` is stored.
+   * Not for Frame::Raw, whose `bytes_per_pixel` is a buffer size, not a
+   * per-pixel count -- use the other constructor for that.
+   * @param data_ Memory to store frame data. If `NULL`, new memory is allocated.
+   */
+  Frame(size_t width, size_t height, Format format, unsigned char *data_ = nullptr);
   virtual ~Frame() noexcept;
 
   protected:
