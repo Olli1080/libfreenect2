@@ -129,6 +129,11 @@ void bindFrame(py::module_ &m)
     .value("RGBX", Frame::RGBX)
     .value("Gray", Frame::Gray);
 
+  py::enum_<FrameQueueMode>(m, "FrameQueueMode",
+      "What SyncMultiFrameListener drops when its buffer is full.")
+    .value("DropNew", FrameQueueMode::DropNew)
+    .value("DropOldest", FrameQueueMode::DropOldest);
+
   py::class_<Frame>(m, "Frame", py::buffer_protocol(),
       "width x height x bytes_per_pixel frame buffer. Supports the buffer "
       "protocol -- use numpy.asarray(frame) for a zero-copy view (valid "
@@ -154,8 +159,13 @@ void bindFrame(py::module_ &m)
       "SyncMultiFrameListener instead.");
 
   py::class_<SyncMultiFrameListener, FrameListener>(m, "SyncMultiFrameListener")
-    .def(py::init<unsigned int>(), py::arg("frame_types"),
-         "frame_types: bitwise-or of FrameType values, e.g. FrameType.Ir | FrameType.Depth.")
+    .def(py::init<unsigned int, std::size_t, FrameQueueMode>(),
+         py::arg("frame_types"),
+         py::arg("capacity") = 1,
+         py::arg("overflow_mode") = FrameQueueMode::DropNew,
+         "frame_types: bitwise-or of FrameType values, e.g. FrameType.Ir | "
+         "FrameType.Depth. capacity: completed frame-sets to buffer for the "
+         "consumer (>= 1); raise it so a slow consumer drops fewer frames.")
     .def("has_new_frame", &SyncMultiFrameListener::hasNewFrame)
     .def("wait_for_new_frame", &waitForNewFrame, py::arg("timeout_ms") = -1,
          "Block for up to timeout_ms (default: forever) and return a dict "

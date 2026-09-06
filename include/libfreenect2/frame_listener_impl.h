@@ -29,6 +29,7 @@
 #ifndef FRAME_LISTENER_IMPL_H_
 #define FRAME_LISTENER_IMPL_H_
 
+#include <cstddef>
 #include <map>
 #include <memory>
 
@@ -43,6 +44,22 @@ namespace libfreenect2
 /** Storage of multiple different types of frames. */
 typedef std::map<Frame::Type, Frame*> FrameMap;
 
+/** Look up one frame in a FrameMap without inserting a null entry for a
+ * missing type (unlike `map::operator[]`). Returns nullptr if absent. */
+inline Frame *getFrame(const FrameMap &frames, Frame::Type type)
+{
+  auto it = frames.find(type);
+  return it != frames.end() ? it->second : nullptr;
+}
+
+/** What SyncMultiFrameListener does with a freshly completed frame-set when
+ * its buffer is already full (a consumer that can't keep up). */
+enum class FrameQueueMode
+{
+  DropNew,     ///< discard the just-completed set, keep the buffered ones
+  DropOldest   ///< evict the oldest buffered set to make room for the new one
+};
+
 class SyncMultiFrameListenerImpl;
 
 /** Collect multiple types of frames. */
@@ -51,8 +68,16 @@ class LIBFREENECT2_API SyncMultiFrameListener : public FrameListener
 public:
   /**
    * @param frame_types Use bitwise or to combine multiple types, e.g. `Frame::Ir | Frame::Depth`.
+   * @param capacity How many completed frame-sets to buffer for the consumer
+   *   (>= 1). With the default 1 a consumer slower than the sensor still gets
+   *   a coherent recent set from every waitForNewFrame(), but intermediate
+   *   sets are dropped. Raise it to drop fewer frames at the cost of latency
+   *   and memory.
+   * @param overflow_mode What to drop when the buffer is full (see FrameQueueMode).
    */
-  SyncMultiFrameListener(unsigned int frame_types);
+  explicit SyncMultiFrameListener(unsigned int frame_types,
+                                  std::size_t capacity = 1,
+                                  FrameQueueMode overflow_mode = FrameQueueMode::DropNew);
   ~SyncMultiFrameListener() noexcept override;
 
   /** Test if there are new frames. Non-blocking. */

@@ -46,10 +46,11 @@
  *
  *  - One SyncMultiFrameListener PER device. A listener's FrameMap is keyed
  *    by Frame::Type, so a shared listener would let two devices' Color
- *    frames collide. Its frame pool is small: the capture thread must
- *    release() each FrameMap promptly and from the same thread it waited on,
- *    so -viewer converts frames to cv::Mat on the capture thread and never
- *    parks a listener frame for the UI thread.
+ *    frames collide. At the default capacity 1 a consumer slower than the
+ *    sensor drops intermediate frames; -capacity <N> (N >= 2) buffers N sets
+ *    of copies so a bursty consumer keeps up. This example still releases
+ *    each FrameMap promptly and copies what -viewer needs on the capture
+ *    thread.
  *
  *  - GPU pipelines (cl/cuda/vk) take a device id -- pass -gpu=<id> to spread
  *    several Kinects across several GPUs. This example applies one id to all
@@ -74,11 +75,13 @@
  *
  * Usage:
  *   MultiKinect [gl | cl | clkde | cuda | cudakde | vk | cpu] [-gpu=<id>]
- *               [-frames <N>] [-norgb | -nodepth] [-viewer] [<serial> ...]
+ *               [-frames <N>] [-capacity <N>] [-norgb | -nodepth] [-viewer]
+ *               [<serial> ...]
  *
  *   No pipeline arg      -> libfreenect2's compile-time default per device.
  *   Trailing digit args  -> restrict to those serials (default: all found).
  *   -frames <N>          -> stop once every device has delivered N frames.
+ *   -capacity <N>        -> per-device listener buffer depth (default 1).
  *   -viewer              -> one OpenCV window, one panel per device; press q
  *                          or Esc to close. Available only when the example
  *                          was built with OpenCV. Prefer a non-gl pipeline
@@ -225,9 +228,9 @@ void captureLoop(DeviceRunner *r, bool viewer_enabled)
     if (viewer_enabled)
     {
       cv::Mat rgb, depth;
-      if (const libfreenect2::Frame *c = fm[libfreenect2::Frame::Color])
+      if (const libfreenect2::Frame *c = libfreenect2::getFrame(fm, libfreenect2::Frame::Color))
         rgb = rgbPanel(c);
-      if (const libfreenect2::Frame *d = fm[libfreenect2::Frame::Depth])
+      if (const libfreenect2::Frame *d = libfreenect2::getFrame(fm, libfreenect2::Frame::Depth))
         depth = colouriseDepth(d);
       std::lock_guard<std::mutex> lk(r->mtx);
       r->pending_rgb = rgb;
@@ -258,6 +261,7 @@ int main(int argc, char *argv[])
   std::string pipeline_name;
   int gpuId = -1;
   size_t framemax = static_cast<size_t>(-1);
+  std::size_t capacity = 1;
   bool enable_rgb = true;
   bool enable_depth = true;
   bool viewer_enabled = false;
@@ -277,6 +281,12 @@ int main(int argc, char *argv[])
       if (++i >= argc) { std::cerr << "-frames needs a value" << std::endl; return -1; }
       framemax = std::strtoul(argv[i], nullptr, 0);
       if (framemax == 0) { std::cerr << "invalid frame count" << std::endl; return -1; }
+    }
+    else if (arg == "-capacity")
+    {
+      if (++i >= argc) { std::cerr << "-capacity needs a value" << std::endl; return -1; }
+      capacity = std::strtoul(argv[i], nullptr, 0);
+      if (capacity < 1) capacity = 1;
     }
     else if (arg == "-norgb" || arg == "--norgb")
       enable_rgb = false;
@@ -340,7 +350,10 @@ int main(int argc, char *argv[])
     auto r = std::make_unique<DeviceRunner>();
     r->dev = dev;
     r->serial = serial;
-    r->listener = std::make_unique<libfreenect2::SyncMultiFrameListener>(frame_types);
+    r->listener = std::make_unique<libfreenect2::SyncMultiFrameListener>(
+        frame_types, capacity,
+        capacity > 1 ? libfreenect2::FrameQueueMode::DropOldest
+                     : libfreenect2::FrameQueueMode::DropNew);
     dev->setColorFrameListener(r->listener.get());
     dev->setIrAndDepthFrameListener(r->listener.get());
     runners.push_back(std::move(r));

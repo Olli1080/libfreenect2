@@ -307,9 +307,9 @@ int main(int argc, char *argv[])
       std::cout << "timeout!" << std::endl;
       return -1;
     }
-    libfreenect2::Frame *rgb = frames[libfreenect2::Frame::Color];
-    libfreenect2::Frame *ir = frames[libfreenect2::Frame::Ir];
-    libfreenect2::Frame *depth = frames[libfreenect2::Frame::Depth];
+    libfreenect2::Frame *rgb = libfreenect2::getFrame(frames, libfreenect2::Frame::Color);
+    libfreenect2::Frame *ir = libfreenect2::getFrame(frames, libfreenect2::Frame::Ir);
+    libfreenect2::Frame *depth = libfreenect2::getFrame(frames, libfreenect2::Frame::Depth);
 /// [loop start]
 
     if (enable_rgb && enable_depth)

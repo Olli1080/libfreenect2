@@ -29,44 +29,114 @@
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/threading.h>
 
+#include <cstring>
+#include <deque>
+#include <utility>
+
 namespace libfreenect2
 {
 
 FrameListener::~FrameListener() {}
 
-/** Implementation class for synchronizing different types of frames. */
+namespace
+{
+std::size_t frameBytes(const Frame *f)
+{
+  // Raw repurposes bytes_per_pixel as the total buffer size (see frame_listener.hpp).
+  return f->format == Frame::Raw ? f->bytes_per_pixel
+                                 : f->width * f->height * f->bytes_per_pixel;
+}
+
+Frame *copyFrame(const Frame *src)
+{
+  Frame *dst = new Frame(src->width, src->height, src->bytes_per_pixel);
+  std::memcpy(dst->data, src->data, frameBytes(src));
+  dst->timestamp = src->timestamp;
+  dst->sequence = src->sequence;
+  dst->exposure = src->exposure;
+  dst->gain = src->gain;
+  dst->gamma = src->gamma;
+  dst->status = src->status;
+  dst->format = src->format;
+  return dst;
+}
+} // namespace
+
+/** Implementation class for synchronizing different types of frames.
+ *
+ * Two modes, chosen by `capacity`:
+ *
+ *  - capacity == 1 (default): zero-copy. `onNewFrame` returns false (the
+ *    pipeline keeps and reuses its buffer) whenever the one buffered set has
+ *    not yet been release()d. Exactly the historical behaviour -- a consumer
+ *    must release before the next waitForNewFrame() delivers, and holding a
+ *    set never stalls the pipeline beyond its own 2-deep buffer pool.
+ *
+ *  - capacity >= 2: the listener copies each frame into its own storage and
+ *    returns false (pipeline reuses its buffer immediately), then queues up
+ *    to `capacity` completed sets. A slow consumer drops intermediate sets
+ *    per `overflow_` but never blocks the pipeline, and may hold sets for as
+ *    long as it likes.
+ */
 class SyncMultiFrameListenerImpl
 {
 public:
   std::mutex mutex_;
   std::condition_variable condition_;
-  FrameMap next_frame_;
 
   const unsigned int subscribed_frame_types_;
-  unsigned int ready_frame_types_;
-  bool current_frame_released_;
+  const std::size_t capacity_;
+  const FrameQueueMode overflow_;
+  const bool copy_;
 
-  SyncMultiFrameListenerImpl(unsigned int frame_types) :
+  FrameMap building_;
+  unsigned int building_frame_types_ = 0;
+  std::deque<FrameMap> ready_;
+  bool checked_out_ = false;   // capacity_ == 1 only: a set is out, awaiting release()
+
+  SyncMultiFrameListenerImpl(unsigned int frame_types, std::size_t capacity, FrameQueueMode overflow) :
     subscribed_frame_types_(frame_types),
-    ready_frame_types_(0),
-    current_frame_released_(true)
+    capacity_(capacity < 1 ? 1 : capacity),
+    overflow_(overflow),
+    copy_(capacity_ >= 2)
   {
   }
 
   bool hasNewFrame() const
   {
-    return ready_frame_types_ == subscribed_frame_types_;
+    return !ready_.empty();
+  }
+
+  static void releaseMap(FrameMap &m)
+  {
+    for (auto &entry : m)
+    {
+      delete entry.second;
+      entry.second = nullptr;
+    }
+    m.clear();
+  }
+
+  void drainAll()
+  {
+    releaseMap(building_);
+    building_frame_types_ = 0;
+    for (auto &m : ready_)
+      releaseMap(m);
+    ready_.clear();
   }
 };
 
-SyncMultiFrameListener::SyncMultiFrameListener(unsigned int frame_types) :
-    impl_(std::make_unique<SyncMultiFrameListenerImpl>(frame_types))
+SyncMultiFrameListener::SyncMultiFrameListener(unsigned int frame_types, std::size_t capacity,
+                                               FrameQueueMode overflow_mode) :
+    impl_(std::make_unique<SyncMultiFrameListenerImpl>(frame_types, capacity, overflow_mode))
 {
 }
 
 SyncMultiFrameListener::~SyncMultiFrameListener()
 {
-  release(impl_->next_frame_);
+  std::scoped_lock l(impl_->mutex_);
+  impl_->drainAll();
 }
 
 bool SyncMultiFrameListener::hasNewFrame() const
@@ -80,81 +150,96 @@ bool SyncMultiFrameListener::waitForNewFrame(FrameMap &frame, int milliseconds)
 {
   std::unique_lock l(impl_->mutex_);
 
-  auto predicate = [this]{ return impl_->hasNewFrame(); };
-
-  if(impl_->condition_.wait_for(l, std::chrono::milliseconds(milliseconds), predicate))
+  if (impl_->condition_.wait_for(l, std::chrono::milliseconds(milliseconds),
+                                 [this] { return impl_->hasNewFrame(); }))
   {
-    frame = impl_->next_frame_;
-    impl_->next_frame_.clear();
-    impl_->ready_frame_types_ = 0;
-    impl_->current_frame_released_ = false;
-
+    frame = std::move(impl_->ready_.front());
+    impl_->ready_.pop_front();
+    if (!impl_->copy_)
+      impl_->checked_out_ = true;
     return true;
   }
-  else
-  {
-    return false;
-  }
+  return false;
 }
 
 void SyncMultiFrameListener::waitForNewFrame(FrameMap &frame)
 {
   std::unique_lock l(impl_->mutex_);
 
-  while(!impl_->hasNewFrame())
-    impl_->condition_.wait(l);
+  impl_->condition_.wait(l, [this] { return impl_->hasNewFrame(); });
 
-  frame = impl_->next_frame_;
-  impl_->next_frame_.clear();
-  impl_->ready_frame_types_ = 0;
-  impl_->current_frame_released_ = false;
+  frame = std::move(impl_->ready_.front());
+  impl_->ready_.pop_front();
+  if (!impl_->copy_)
+    impl_->checked_out_ = true;
 }
 
 void SyncMultiFrameListener::release(FrameMap &frame)
 {
-  for(auto& [type, fr] : frame)
+  for (auto &entry : frame)
   {
-    delete fr;
-    fr = nullptr;
+    delete entry.second;
+    entry.second = nullptr;
   }
-
   frame.clear();
 
+  if (!impl_->copy_)
   {
-	std::scoped_lock l(impl_->mutex_);
-    impl_->current_frame_released_ = true;
+    std::scoped_lock l(impl_->mutex_);
+    impl_->checked_out_ = false;
   }
 }
 
 bool SyncMultiFrameListener::onNewFrame(Frame::Type type, Frame *frame)
 {
-  if((impl_->subscribed_frame_types_ & type) == 0) return false;
+  if ((impl_->subscribed_frame_types_ & type) == 0)
+    return false;
 
   {
-	std::scoped_lock l(impl_->mutex_);
+    std::scoped_lock l(impl_->mutex_);
 
-    if (!impl_->current_frame_released_)
+    // Zero-copy mode: refuse (pipeline reuses its buffer) while the consumer
+    // still holds the previous set, or while a completed set is waiting.
+    if (!impl_->copy_ && (impl_->checked_out_ || !impl_->ready_.empty()))
       return false;
 
-    auto it = impl_->next_frame_.find(type);
+    Frame *stored = impl_->copy_ ? copyFrame(frame) : frame;
 
-    if(it != impl_->next_frame_.end())
+    auto it = impl_->building_.find(type);
+    if (it != impl_->building_.end())
     {
-      // replace frame
-      delete it->second;
-      it->second = frame;
+      delete it->second;   // replace an earlier frame of the same type
+      it->second = stored;
     }
     else
     {
-      impl_->next_frame_[type] = frame;
+      impl_->building_[type] = stored;
     }
+    impl_->building_frame_types_ |= type;
 
-    impl_->ready_frame_types_ |= type;
+    if (impl_->building_frame_types_ == impl_->subscribed_frame_types_)
+    {
+      if (impl_->ready_.size() >= impl_->capacity_)
+      {
+        if (impl_->overflow_ == FrameQueueMode::DropNew)
+        {
+          SyncMultiFrameListenerImpl::releaseMap(impl_->building_);
+          impl_->building_frame_types_ = 0;
+          return impl_->copy_;   // copy mode: we own the copies (freed); zero-copy: pipeline keeps its buffer
+        }
+        SyncMultiFrameListenerImpl::releaseMap(impl_->ready_.front());
+        impl_->ready_.pop_front();
+      }
+
+      impl_->ready_.push_back(std::move(impl_->building_));
+      impl_->building_.clear();
+      impl_->building_frame_types_ = 0;
+    }
   }
 
   impl_->condition_.notify_one();
 
-  return true;
+  return !impl_->copy_ ? true : false;   // zero-copy: took ownership of the buffer; copy: pipeline keeps it
 }
 
 } /* namespace libfreenect2 */
