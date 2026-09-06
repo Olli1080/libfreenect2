@@ -214,9 +214,8 @@ def main(argv: list[str]) -> int:
 
     def video_loop():
         while not stop_event.is_set():
-            try:
-                frames = listener.wait_for_new_frame(1000)
-            except RuntimeError:
+            frames = listener.wait_for_new_frame(1000)
+            if frames is None:
                 continue
 
             rgb = frames[f2.FrameType.Color]

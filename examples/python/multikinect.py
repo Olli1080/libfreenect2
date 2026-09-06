@@ -143,9 +143,8 @@ class DeviceRunner:
 
     def _loop(self):
         while not self._stop.is_set():
-            try:
-                fm = self.listener.wait_for_new_frame(1000)
-            except RuntimeError:
+            fm = self.listener.wait_for_new_frame(1000)
+            if fm is None:
                 continue  # timeout -- re-check the stop flag
             self.frames += 1
 

@@ -93,9 +93,8 @@ def main(argv: list[str]) -> int:
 
     try:
         while args.duration is None or (time.monotonic() - start) < args.duration:
-            try:
-                frames = listener.wait_for_new_frame(1000)
-            except RuntimeError:
+            frames = listener.wait_for_new_frame(1000)
+            if frames is None:
                 continue
 
             arrival_us = f2.now_microseconds()

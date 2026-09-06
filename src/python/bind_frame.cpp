@@ -80,7 +80,7 @@ py::buffer_info frameBuffer(Frame &frame)
   );
 }
 
-py::dict waitForNewFrame(SyncMultiFrameListener &self, int timeout_ms)
+py::object waitForNewFrame(SyncMultiFrameListener &self, int timeout_ms)
 {
   FrameMap frames;
   bool ok = true;
@@ -93,7 +93,7 @@ py::dict waitForNewFrame(SyncMultiFrameListener &self, int timeout_ms)
   }
 
   if (!ok)
-    throw std::runtime_error("timed out waiting for a new frame");
+    return py::none();   // matches the C++ bool: None on timeout, no exception
 
   py::dict result;
   for (auto &kv : frames)
@@ -157,6 +157,11 @@ void bindFrame(py::module_ &m)
     .def_readonly("format", &Frame::format)
     .def_buffer(&frameBuffer);
 
+  // C++ nests these as Frame::Type / Frame::Format; expose the same spelling
+  // alongside the top-level FrameType / FrameFormat.
+  m.attr("Frame").attr("Type") = m.attr("FrameType");
+  m.attr("Frame").attr("Format") = m.attr("FrameFormat");
+
   py::class_<FrameListener>(m, "FrameListener",
       "Base callback interface. Not subclassable from Python in v1 -- use "
       "SyncMultiFrameListener instead.");
@@ -171,10 +176,9 @@ void bindFrame(py::module_ &m)
          "consumer (>= 1); raise it so a slow consumer drops fewer frames.")
     .def("has_new_frame", &SyncMultiFrameListener::hasNewFrame)
     .def("wait_for_new_frame", &waitForNewFrame, py::arg("timeout_ms") = -1,
-         "Block for up to timeout_ms (default: forever) and return a dict "
-         "of FrameType -> Frame. Raises TimeoutError-compatible RuntimeError "
-         "if timeout_ms >= 0 and no frame arrived in time. Caller must pass "
-         "the returned dict to release() when done with it.")
+         "Block for up to timeout_ms (default: forever) and return a dict of "
+         "FrameType -> Frame, or None if timeout_ms >= 0 and no frame arrived "
+         "in time. Pass the returned dict to release() when done with it.")
     .def("release", &releaseFrames, py::arg("frames"),
          "Free the frames in a dict previously returned by wait_for_new_frame().");
 }

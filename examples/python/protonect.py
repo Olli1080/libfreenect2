@@ -173,9 +173,8 @@ def main(argv: list[str]) -> int:
     framecount = 0
     try:
         while args.framemax is None or framecount < args.framemax:
-            try:
-                frames = listener.wait_for_new_frame(10_000)
-            except RuntimeError:
+            frames = listener.wait_for_new_frame(10_000)
+            if frames is None:
                 print("timeout!")
                 return -1
 
