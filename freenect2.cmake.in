@@ -18,6 +18,21 @@ find_library(freenect2_logging_LIBRARY
 set(freenect2_INCLUDE_DIRS ${freenect2_INCLUDE_DIR})
 set(freenect2_LIBRARIES ${freenect2_LIBRARY} ${freenect2_logging_LIBRARY})
 
+# Optional microphone-array audio backend (built when ENABLE_AUDIO was on).
+# It is linked directly by external consumers, not by core freenect2, so it is
+# surfaced as its own imported target rather than folded into freenect2_LIBRARIES.
+find_library(freenect2_audio_LIBRARY
+    NAMES freenect2_audio
+    HINTS "${_freenect2_prefix}/lib"
+)
+if(freenect2_audio_LIBRARY AND NOT TARGET freenect2::audio)
+    add_library(freenect2::audio UNKNOWN IMPORTED)
+    set_target_properties(freenect2::audio PROPERTIES
+        IMPORTED_LOCATION "${freenect2_audio_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${freenect2_INCLUDE_DIR}"
+    )
+endif()
+
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(freenect2
     REQUIRED_VARS freenect2_LIBRARY freenect2_logging_LIBRARY freenect2_INCLUDE_DIR

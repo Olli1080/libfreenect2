@@ -184,6 +184,16 @@ install(DIRECTORY include/libfreenect2/
 install(DIRECTORY ${PROJECT_BINARY_DIR}/libfreenect2/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libfreenect2
 )
+if(LIBFREENECT2_WITH_AUDIO_SUPPORT)
+  # freenect2_audio is linked directly by external consumers (it is deliberately
+  # NOT linked into core freenect2 - see src/audio/CMakeLists.txt), so its
+  # generated export header has to be installed as well: audio_capture.hpp does
+  # #include <freenect2_audio/export.h>. The library binary itself is already
+  # installed by freenect2_setup_backend_library().
+  install(DIRECTORY ${PROJECT_BINARY_DIR}/freenect2_audio/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/freenect2_audio
+  )
+endif()
 install(FILES
   "${PROJECT_BINARY_DIR}/freenect2Config.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/freenect2
