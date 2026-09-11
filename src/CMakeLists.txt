@@ -8,11 +8,19 @@
 add_library(freenect2)
 
 # --- Include Directories ---
+# $<INSTALL_INTERFACE:...> is required, not just tidy: without it install(EXPORT freenect2Targets)
+# refuses to generate at all (a target whose PUBLIC include dirs are BUILD_INTERFACE-only would
+# leak this machine's build-tree path into every installed consumer's config). include/internal
+# has no INSTALL_INTERFACE counterpart on purpose - those headers aren't installed, so they stay
+# build-only; PROJECT_BINARY_DIR (generated config.h/export.h, both under libfreenect2/, which the
+# root CMakeLists installs to ${CMAKE_INSTALL_INCLUDEDIR}/libfreenect2/) shares the same
+# INSTALL_INTERFACE root as the real headers.
 target_include_directories(freenect2
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/internal>
     $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )

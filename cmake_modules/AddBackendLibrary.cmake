@@ -31,7 +31,13 @@ function(freenect2_setup_backend_library TARGET_NAME)
     EXPORT_FILE_NAME ${PROJECT_BINARY_DIR}/${TARGET_NAME}/export.h
   )
 
+  # EXPORT freenect2Targets: joins the same export set core freenect2 uses (see the root
+  # CMakeLists' install(EXPORT freenect2Targets ...)) so freenect2Targets.cmake carries a real,
+  # per-config-correct imported target for every backend - harmless for the backends with only
+  # PRIVATE include dirs (nothing here to export), and required for freenect2_audio, the one
+  # backend meant to be linked directly by external consumers.
   install(TARGETS ${TARGET_NAME}
+    EXPORT freenect2Targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

@@ -6,29 +6,11 @@
 #   2. Legacy/manual mode — uses cmake_modules/Find*.cmake scripts
 
 # --- Always Required: libusb ---
-# vcpkg's libusb provides only pkg-config, not a CMake config file
-# Ensure libusb::libusb-1.0 target exists for downstream CMake usage
-if(NOT TARGET libusb::libusb-1.0)
-  find_package(PkgConfig QUIET)
-  pkg_check_modules(LIBUSB_PC REQUIRED libusb-1.0)
-
-  # Construct full path: libdir/libusb-1.0.lib
-  foreach(LIBDIR IN LISTS LIBUSB_PC_LIBRARY_DIRS)
-    if(EXISTS "${LIBDIR}/libusb-1.0.lib")
-      set(LIBUSB_FULL_PATH "${LIBDIR}/libusb-1.0.lib")
-      break()
-    elseif(EXISTS "${LIBDIR}/libusb-1.0.a")
-      set(LIBUSB_FULL_PATH "${LIBDIR}/libusb-1.0.a")
-      break()
-    endif()
-  endforeach()
-
-  add_library(libusb::libusb-1.0 UNKNOWN IMPORTED)
-  set_target_properties(libusb::libusb-1.0 PROPERTIES
-    IMPORTED_LOCATION "${LIBUSB_FULL_PATH}"
-    INTERFACE_INCLUDE_DIRECTORIES "${LIBUSB_PC_INCLUDE_DIRS}"
-  )
-endif()
+# vcpkg's libusb provides only pkg-config, not a CMake config file - constructing
+# libusb::libusb-1.0 from it is shared with freenect2Config.cmake (core freenect2 links libusb
+# PUBLIC, so an external consumer needs this target too), hence its own module - see
+# cmake_modules/FindLibUSB1.cmake's own doc comment.
+include(FindLibUSB1)
 
 # --- Always Required: TurboJPEG ---
 if(VCPKG_MANIFEST_MODE)

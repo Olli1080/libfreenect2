@@ -123,10 +123,18 @@ configure_file(
 )
 
 # --- CMake config files for downstream consumers ---
-configure_file(
+# configure_package_config_file() (not plain configure_file()) is what makes freenect2Config.cmake
+# properly relocatable (@PACKAGE_INIT@ + PACKAGE_PREFIX_DIR) and lets it include(freenect2Targets.cmake)
+# - the file install(EXPORT freenect2Targets ...) below generates, itself correctly per-config
+# (IMPORTED_LOCATION_DEBUG/_RELEASE) rather than the previous hand-rolled find_library() version,
+# which only ever found the Release library regardless of which config was actually being built -
+# confirmed live: a Debug consumer's import table named the Release DLL, which never existed in
+# debug/bin, and the loader could never resolve it.
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
   freenect2.cmake.in
   "${PROJECT_BINARY_DIR}/freenect2Config.cmake"
-  @ONLY
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/freenect2
 )
 configure_file(
   freenect2Version.cmake.in
@@ -206,12 +214,17 @@ install(FILES
   "${PROJECT_BINARY_DIR}/freenect2.pc"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
-#TODO::fix later
-#install(EXPORT freenect2Targets
-#  FILE freenect2Targets.cmake
-#  NAMESPACE freenect2::
-#  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/freenect2
-#)
+install(EXPORT freenect2Targets
+  FILE freenect2Targets.cmake
+  NAMESPACE freenect2::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/freenect2
+)
+# freenect2Config.cmake include()s this directly (a consumer needs libusb::libusb-1.0 to resolve
+# core freenect2's PUBLIC link interface) - see FindLibUSB1.cmake's own doc comment.
+install(FILES
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/FindLibUSB1.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/freenect2
+)
 
 # --- Documentation ---
 add_subdirectory(doc)

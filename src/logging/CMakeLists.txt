@@ -35,11 +35,16 @@ target_sources(freenect2_logging
     ${PROJECT_SOURCE_DIR}/include/libfreenect2/frame_listener.hpp
 )
 
+# BUILD_INTERFACE/INSTALL_INTERFACE-wrapped (not raw absolute paths) so this target can actually
+# be install(EXPORT)-ed - see src/CMakeLists.txt's freenect2 target for the fuller explanation of
+# why an unwrapped absolute build-tree path in PUBLIC include dirs blocks that outright.
+# include/internal has no INSTALL_INTERFACE counterpart on purpose (not installed, build-only).
 target_include_directories(freenect2_logging
   PUBLIC
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/include/internal
-    ${PROJECT_BINARY_DIR}
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/internal>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_compile_features(freenect2_logging PUBLIC cxx_std_17)
@@ -71,6 +76,7 @@ target_link_libraries(freenect2_logging
 )
 
 install(TARGETS freenect2_logging
+  EXPORT freenect2Targets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

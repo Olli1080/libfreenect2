@@ -37,9 +37,22 @@ freenect2_setup_backend_library(freenect2_audio)
 # them, and core already has its own include paths) — add the two PUBLIC
 # paths this one needs on top of that instead of changing the shared
 # function's default for everyone.
+#
+# BUILD_INTERFACE/INSTALL_INTERFACE-wrapped, not raw absolute paths: a target
+# with an unwrapped absolute build-tree path in its PUBLIC/INTERFACE include
+# directories cannot be install(EXPORT)-ed at all (CMake refuses - the
+# generated Targets.cmake would leak this machine's build path into every
+# installed consumer). ${PROJECT_BINARY_DIR} (not .../freenect2_audio) is the
+# right BUILD_INTERFACE dir: this target's own generate_export_header() output
+# is ${PROJECT_BINARY_DIR}/freenect2_audio/export.h, included as
+# <freenect2_audio/export.h>, so the include *root* is one level up - and the
+# root CMakeLists' install(DIRECTORY ${PROJECT_BINARY_DIR}/freenect2_audio/ ...)
+# installs that same file under ${CMAKE_INSTALL_INCLUDEDIR}/freenect2_audio/,
+# so one INSTALL_INTERFACE root covers both the real headers and this one.
 target_include_directories(freenect2_audio PUBLIC
-  ${PROJECT_SOURCE_DIR}/include
-  ${PROJECT_BINARY_DIR}
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # DoaEstimator (doa.cpp) uses single-precision FFTW3 for GCC-PHAT
