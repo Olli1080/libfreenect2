@@ -4,6 +4,7 @@
 # --- Core Build Options ---
 option(BUILD_SHARED_LIBS "Build shared (ON) or static (OFF) libraries" ON)
 option(BUILD_EXAMPLES "Build examples (Protonect)" ON)
+option(BUILD_TESTS "Build the tests that need no Kinect" OFF)
 option(BUILD_OPENNI2_DRIVER "Build OpenNI2 driver plugin" ON)
 option(BUILD_STREAMER_RECORDER "Build network streaming tool" OFF)
 option(BUILD_PCL_EXAMPLE "Build PCL point cloud visualization example" OFF)

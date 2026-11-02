@@ -234,6 +234,12 @@ if(BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
+# --- Tests ---
+if(BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
+
 # --- OpenNI2 Driver ---
 if(BUILD_OPENNI2_DRIVER AND LIBFREENECT2_WITH_OPENNI2_SUPPORT)
   add_subdirectory(src/openni2)

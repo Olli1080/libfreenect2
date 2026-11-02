@@ -129,6 +129,39 @@ DepthPacketProcessor *PacketPipeline::getDepthPacketProcessor() const
   return comp_->depth_processor_.get();
 }
 
+bool PacketPipeline::replaceDepthProcessor(PacketPipeline &donor, const std::function<void(DepthPacketProcessor &)> &prepare)
+{
+  if (&donor == this)
+    return false;
+
+  PacketPipelineComponents &mine = *comp_;
+  PacketPipelineComponents &theirs = *donor.comp_;
+  if (!theirs.depth_processor_ || !theirs.depth_processor_->good())
+    return false;
+
+  // The donor's parser holds a buffer from the donor's processor: return it while that processor is alive,
+  // then stop the donor's worker thread before the processor leaves its wrapper.
+  theirs.depth_parser_->setPacketProcessor(nullptr);
+  theirs.async_depth_processor_.reset();
+  std::unique_ptr<DepthPacketProcessor> incoming = std::move(theirs.depth_processor_);
+
+  if (prepare)
+    prepare(*incoming);
+
+  auto incoming_async = std::make_unique<AsyncPacketProcessor<DepthPacket>>(incoming.get());
+  mine.depth_parser_->setPacketProcessor(incoming_async.get());
+
+  // The parser no longer refers to the old stage. The wrapper goes first (joins its worker), then its processor.
+  mine.async_depth_processor_ = std::move(incoming_async);
+  mine.depth_processor_ = std::move(incoming);
+  return true;
+}
+
+void PacketPipeline::setDepthFrameStride(unsigned stride)
+{
+  comp_->depth_parser_->setFrameStride(stride);
+}
+
 CpuPacketPipeline::CpuPacketPipeline()
 {
   comp_->initialize(getDefaultRgbPacketProcessor(), std::make_unique<CpuDepthPacketProcessor>());

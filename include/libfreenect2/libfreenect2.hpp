@@ -36,6 +36,7 @@
 #include <libfreenect2/led_settings.h>
 #include <libfreenect2/depth_processor_config.h>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 
@@ -147,6 +148,32 @@ public:
 
   /** Configure depth processing. */
   virtual void setConfiguration(const Config &config) = 0;
+
+  /** Replace the depth backend (for example Vulkan by CPU) while the device stays open.
+   *
+   * Works while streaming: the USB transfers keep running and a frame or two may be missed. The previous
+   * backend is destroyed, so a GPU backend releases its GPU resources. The listener, the configuration and
+   * the calibration tables carry over to the new backend.
+   *
+   * Only the depth processor of `pipeline` is used, its color part is discarded. Call it from the thread that
+   * controls the device, not at the same time as start(), stop() or close(). Replay devices do not support it.
+   *
+   * @param pipeline A new PacketPipeline, see createPacketPipeline(). It is always freed.
+   * @return true if ok, false if the backend is unusable (for example no GPU); the previous backend stays active.
+   */
+  [[nodiscard]] virtual bool replaceDepthPipeline(std::unique_ptr<PacketPipeline> pipeline) = 0;
+
+  /** Replace the depth backend by name, see replaceDepthPipeline() and pipeline_factory.h.
+   * @param name Canonical name or alias of a registered pipeline, e.g. "cpu" or "vk".
+   * @param gpu_device_id GPU for backends that use one, -1 for the default.
+   */
+  [[nodiscard]] virtual bool setDepthBackend(std::string_view name, int gpu_device_id = -1) = 0;
+
+  /** Process only every n-th depth frame and drop the others before any processing. 1 processes all, 0 none.
+   * IR frames come from the same data and follow. The USB stream itself stays at 30 fps.
+   * May be called at any time.
+   */
+  virtual void setDepthFrameStride(unsigned stride) = 0;
 
   /** Provide your listener to receive color frames. */
   virtual void setColorFrameListener(FrameListener* rgb_frame_listener) = 0;

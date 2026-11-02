@@ -267,10 +267,17 @@ private:
   CommandTransaction command_tx_;
   int command_seq_;
 
-  std::unique_ptr<const PacketPipeline> pipeline_;
+  std::unique_ptr<PacketPipeline> pipeline_;
   std::string serial_, firmware_;
   Freenect2Device::IrCameraParams ir_camera_params_;
   Freenect2Device::ColorCameraParams rgb_camera_params_;
+
+  // State a replacement depth processor has to be given, see replaceDepthPipeline()
+  bool has_ir_camera_params_;
+  bool has_depth_config_;
+  Freenect2Device::Config depth_config_;
+  FrameListener *ir_and_depth_listener_;
+  std::vector<unsigned char> p0_tables_;
 public:
   Freenect2DeviceImpl(Freenect2Impl *context, std::unique_ptr<const PacketPipeline> pipeline, libusb_device *usb_device, libusb_device_handle *usb_device_handle, const std::string &serial);
   ~Freenect2DeviceImpl() override;
@@ -285,6 +292,9 @@ public:
   void setColorCameraParams(const Freenect2Device::ColorCameraParams &params) override;
   void setIrCameraParams(const Freenect2Device::IrCameraParams &params) override;
   void setConfiguration(const Freenect2Device::Config &config) override;
+  bool replaceDepthPipeline(std::unique_ptr<PacketPipeline> pipeline) override;
+  bool setDepthBackend(std::string_view name, int gpu_device_id) override;
+  void setDepthFrameStride(unsigned stride) override;
 
   int nextCommandSeq();
 
@@ -322,6 +332,9 @@ public:
   void setColorCameraParams(const ColorCameraParams &params) override;
   void setIrCameraParams(const IrCameraParams &params) override;
   void setConfiguration(const Config &config) override;
+  bool replaceDepthPipeline(std::unique_ptr<PacketPipeline>) override { return false; } // replay buffers belong to the initial processor
+  bool setDepthBackend(std::string_view, int) override { return false; }
+  void setDepthFrameStride(unsigned) override {}
 
   void setColorFrameListener(FrameListener* listener) override;
   void setIrAndDepthFrameListener(FrameListener* listener) override;
@@ -659,9 +672,13 @@ Freenect2DeviceImpl::Freenect2DeviceImpl(Freenect2Impl *context, std::unique_ptr
   usb_control_(usb_device_handle_.get()),
   command_tx_(usb_device_handle_.get(), 0x81, 0x02),
   command_seq_(0),
-  pipeline_(std::move(pipeline)),
+  // The pipeline was heap-allocated non-const by whoever built it; const only marks the hand-over in the public API
+  pipeline_(const_cast<PacketPipeline *>(pipeline.release())),
   serial_(serial),
-  firmware_("<unknown>")
+  firmware_("<unknown>"),
+  has_ir_camera_params_(false),
+  has_depth_config_(false),
+  ir_and_depth_listener_(nullptr)
 {
   rgb_transfer_pool_.setCallback(pipeline_->getRgbPacketParser());
   ir_transfer_pool_.setCallback(pipeline_->getIrPacketParser());
@@ -722,6 +739,7 @@ void Freenect2DeviceImpl::setColorCameraParams(const Freenect2Device::ColorCamer
 void Freenect2DeviceImpl::setIrCameraParams(const Freenect2Device::IrCameraParams &params)
 {
   ir_camera_params_ = params;
+  has_ir_camera_params_ = true;
   DepthPacketProcessor *proc = pipeline_->getDepthPacketProcessor();
   if (proc != nullptr)
   {
@@ -733,9 +751,58 @@ void Freenect2DeviceImpl::setIrCameraParams(const Freenect2Device::IrCameraParam
 
 void Freenect2DeviceImpl::setConfiguration(const Freenect2Device::Config &config)
 {
+  depth_config_ = config;
+  has_depth_config_ = true;
   DepthPacketProcessor *proc = pipeline_->getDepthPacketProcessor();
   if (proc != nullptr)
     proc->setConfiguration(config);
+}
+
+bool Freenect2DeviceImpl::replaceDepthPipeline(std::unique_ptr<PacketPipeline> pipeline)
+{
+  if (!pipeline || state_ == Closed)
+    return false;
+
+  // Everything the old processor was given before, in the order start() gives it
+  auto prepare = [this](DepthPacketProcessor &proc)
+  {
+    proc.setFrameListener(ir_and_depth_listener_);
+    if (has_depth_config_)
+      proc.setConfiguration(depth_config_);
+    if (has_ir_camera_params_)
+    {
+      IrCameraTables tables(ir_camera_params_);
+      proc.loadXZTables(tables.xtable.data(), tables.ztable.data());
+      proc.loadLookupTable(tables.lut.data());
+    }
+    if (!p0_tables_.empty())
+      proc.loadP0TablesFromCommandResponse(p0_tables_.data(), p0_tables_.size());
+  };
+
+  if (!pipeline_->replaceDepthProcessor(*pipeline, prepare))
+  {
+    LOG_WARNING("depth backend is unusable, keeping `{}'", pipeline_->getDepthPacketProcessor()->name());
+    return false;
+  }
+
+  LOG_INFO("depth backend is now `{}'", pipeline_->getDepthPacketProcessor()->name());
+  return true;
+}
+
+bool Freenect2DeviceImpl::setDepthBackend(std::string_view name, int gpu_device_id)
+{
+  std::unique_ptr<PacketPipeline> pipeline = createPacketPipeline(name, gpu_device_id);
+  if (!pipeline)
+  {
+    LOG_WARNING("`{}' pipeline is not available.", name);
+    return false;
+  }
+  return replaceDepthPipeline(std::move(pipeline));
+}
+
+void Freenect2DeviceImpl::setDepthFrameStride(unsigned stride)
+{
+  pipeline_->setDepthFrameStride(stride);
 }
 
 void Freenect2DeviceImpl::setColorFrameListener(libfreenect2::FrameListener* rgb_frame_listener)
@@ -748,6 +815,7 @@ void Freenect2DeviceImpl::setColorFrameListener(libfreenect2::FrameListener* rgb
 void Freenect2DeviceImpl::setIrAndDepthFrameListener(libfreenect2::FrameListener* ir_frame_listener)
 {
   // TODO: should only be possible, if not started
+  ir_and_depth_listener_ = ir_frame_listener;
   if(pipeline_->getDepthPacketProcessor() != nullptr)
     pipeline_->getDepthPacketProcessor()->setFrameListener(ir_frame_listener);
 }
@@ -910,6 +978,7 @@ bool Freenect2DeviceImpl::startStreams(bool enable_rgb, bool enable_depth)
   setIrCameraParams(DepthCameraParamsResponse(result).toIrCameraParams());
 
   if (!command_tx_.execute(ReadP0TablesCommand(nextCommandSeq()), result)) return false;
+  p0_tables_.assign(result.data(), result.data() + result.size());
   if(pipeline_->getDepthPacketProcessor() != nullptr)
     pipeline_->getDepthPacketProcessor()->loadP0TablesFromCommandResponse(result.data(), result.size());
 

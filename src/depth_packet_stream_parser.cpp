@@ -34,6 +34,8 @@ namespace libfreenect2
 {
 
 DepthPacketStreamParser::DepthPacketStreamParser() :
+    frame_stride_(1),
+    frames_seen_(0),
     processor_(noopProcessor<DepthPacket>()),
     processed_packets_(-1),
     current_sequence_(0),
@@ -56,13 +58,26 @@ DepthPacketStreamParser::~DepthPacketStreamParser()
 
 void DepthPacketStreamParser::setPacketProcessor(libfreenect2::BaseDepthPacketProcessor *processor)
 {
+  std::lock_guard lock(mutex_);
   processor_->releaseBuffer(packet_);
-  processor_ = (processor != nullptr) ? processor : noopProcessor<DepthPacket>();
+  if (processor == nullptr)
+  {
+    // Detached: the shared noop processor has only two buffers and would never get this one back
+    processor_ = noopProcessor<DepthPacket>();
+    return;
+  }
+  processor_ = processor;
   processor_->allocateBuffer(packet_, buffer_size_);
+}
+
+void DepthPacketStreamParser::setFrameStride(unsigned stride)
+{
+  frame_stride_ = stride;
 }
 
 void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_length)
 {
+  std::lock_guard lock(mutex_);
   if (packet_.memory == nullptr || packet_.memory->data == nullptr)
   {
         LOG_ERROR("Packet buffer is NULL");
@@ -109,17 +124,12 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
         {
           if(current_subsequence_ == 0x3ff)
           {
-            if(processor_->ready())
+            const unsigned stride = frame_stride_;
+            const bool wanted = stride != 0 && frames_seen_++ % stride == 0;
+
+            // Frames dropped on purpose count as handled, or they would be reported as lost
+            auto account_packet = [this]()
             {
-              DepthPacket &packet = packet_;
-              packet.sequence = current_sequence_;
-              packet.timestamp = footer->timestamp;
-              packet.buffer = packet_.memory->data;
-              packet.buffer_length = packet_.memory->capacity;
-
-              processor_->process(packet);
-              processor_->allocateBuffer(packet_, buffer_size_);
-
               processed_packets_++;
               if (processed_packets_ == 0)
                 processed_packets_ = current_sequence_;
@@ -130,6 +140,24 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
                                 LOG_INFO("{} packets were lost", diff);
                 processed_packets_ = current_sequence_;
               }
+            };
+
+            if(!wanted)
+            {
+              account_packet();
+            }
+            else if(processor_->ready())
+            {
+              DepthPacket &packet = packet_;
+              packet.sequence = current_sequence_;
+              packet.timestamp = footer->timestamp;
+              packet.buffer = packet_.memory->data;
+              packet.buffer_length = packet_.memory->capacity;
+
+              processor_->process(packet);
+              processor_->allocateBuffer(packet_, buffer_size_);
+
+              account_packet();
             }
             else
             {

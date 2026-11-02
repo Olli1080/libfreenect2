@@ -31,6 +31,7 @@
 
 #include <libfreenect2/config.h>
 
+#include <functional>
 #include <memory>
 
 namespace libfreenect2
@@ -64,6 +65,16 @@ public:
 
   virtual RgbPacketProcessor *getRgbPacketProcessor() const;
   virtual DepthPacketProcessor *getDepthPacketProcessor() const;
+
+  /** Take over the depth processor of `donor` and retire the current one, while packets keep arriving.
+   * `prepare` runs on the incoming processor before it sees its first packet.
+   * Reserved for internal use, see Freenect2Device::replaceDepthPipeline().
+   * @return false, with nothing changed, if `donor` has no usable depth processor.
+   */
+  bool replaceDepthProcessor(PacketPipeline &donor, const std::function<void(DepthPacketProcessor &)> &prepare);
+
+  /** Forward every n-th depth packet to the processor, 0 forwards none. Reserved for internal use. */
+  void setDepthFrameStride(unsigned stride);
 protected:
   std::unique_ptr<PacketPipelineComponents> comp_;
 };

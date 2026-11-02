@@ -31,7 +31,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <atomic>
 #include <memory>
+#include <mutex>
 
 #include <libfreenect2/config.h>
 
@@ -64,10 +66,18 @@ public:
   DepthPacketStreamParser();
   ~DepthPacketStreamParser() noexcept override;
 
+  /** Swap the processor; safe while data is being received. */
   void setPacketProcessor(libfreenect2::BaseDepthPacketProcessor *processor);
+
+  /** Hand only every n-th complete depth packet to the processor, 0 hands none. */
+  void setFrameStride(unsigned stride);
 
   void onDataReceived(unsigned char* buffer, size_t length) override;
 private:
+  std::mutex mutex_; ///< Guards processor_ and the packet state against setPacketProcessor().
+  std::atomic<unsigned> frame_stride_;
+  unsigned frames_seen_;
+
   libfreenect2::BaseDepthPacketProcessor *processor_;
 
   size_t buffer_size_;

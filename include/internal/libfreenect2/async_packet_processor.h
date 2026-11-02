@@ -61,7 +61,11 @@ public:
 
   ~AsyncPacketProcessor() noexcept override
   {
-    shutdown_ = true;
+    {
+      // shutdown_ is read under packet_mutex_ by the worker; setting it unlocked can lose the wake-up
+      std::lock_guard l(packet_mutex_);
+      shutdown_ = true;
+    }
     packet_condition_.notify_one();
 
     thread_.join();
