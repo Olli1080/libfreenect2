@@ -29,6 +29,8 @@
 #include <libfreenect2/depth_packet_processor.h>
 #include <libfreenect2/async_packet_processor.h>
 
+#include <cstring>
+
 namespace libfreenect2
 {
 

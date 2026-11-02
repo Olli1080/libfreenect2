@@ -180,7 +180,8 @@ void DepthPacketStreamParser::onDataReceived(unsigned char* buffer, size_t in_le
 
         if(footer->subsequence * footer->length > fb.capacity)
         {
-                    LOG_DEBUG("front buffer too short! subsequence number is {}", footer->subsequence);
+                    uint32_t const subsequence = footer->subsequence; // a packed field cannot be bound to the logger's reference
+                    LOG_DEBUG("front buffer too short! subsequence number is {}", subsequence);
         }
         else
         {

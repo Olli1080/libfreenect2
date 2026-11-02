@@ -96,8 +96,9 @@ public:
   ResultCode setIrInterfaceState(State state);
 
 private:
-  static const int ControlAndRgbInterfaceId = 0;
-  static const int IrInterfaceId = 1;
+  // constexpr makes them inline: the logger binds them to a reference, which needs a definition
+  static constexpr int ControlAndRgbInterfaceId = 0;
+  static constexpr int IrInterfaceId = 1;
 
   libusb_device_handle* handle_;
   int timeout_;

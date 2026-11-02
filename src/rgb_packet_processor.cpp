@@ -29,6 +29,7 @@
 #include <libfreenect2/rgb_packet_processor.h>
 #include <libfreenect2/async_packet_processor.h>
 
+#include <cstring>
 #include <memory>
 
 namespace libfreenect2
