@@ -124,6 +124,11 @@ AudioCaptureImpl::AudioCaptureImpl() :
   shutdown_(false),
   pending_cancellations_(0),
   listener_(nullptr),
+  packets_ok_(0),
+  packets_failed_(0),
+  packets_empty_(0),
+  bytes_received_(0),
+  first_failure_status_(0),
   deviceFound_(false),
   channels_(kChannels),
   sample_rate_(kSampleRate)
@@ -147,6 +152,11 @@ AudioCaptureImpl::AudioCaptureImpl(Freenect2Device *device) :
   shutdown_(false),
   pending_cancellations_(0),
   listener_(nullptr),
+  packets_ok_(0),
+  packets_failed_(0),
+  packets_empty_(0),
+  bytes_received_(0),
+  first_failure_status_(0),
   deviceFound_(false),
   channels_(kChannels),
   sample_rate_(kSampleRate)
@@ -261,6 +271,17 @@ bool AudioCaptureImpl::start(AudioFrameListener *listener)
   // constructor for why a second reset would break the active video
   // session).
 
+#if !defined(_WIN32)
+  // Linux: the kernel's snd-usb-audio normally binds the mic array's audio
+  // interfaces (again after every device reset), and libusb_claim_interface()
+  // then fails with LIBUSB_ERROR_BUSY. Let libusb detach that driver while we
+  // hold the interfaces and give them back on release. Not supported on every
+  // platform; the result is deliberately ignored, a refusal shows as a failed
+  // claim below. Not yet tried against a kernel that has snd-usb-audio (the
+  // WSL 2 kernel does not).
+  (void)libusb_set_auto_detach_kernel_driver(handle_, 1);
+#endif
+
   int r = libusb_claim_interface(handle_, kAudioControlInterface);
   if (r != LIBUSB_SUCCESS)
   {
@@ -369,6 +390,10 @@ void AudioCaptureImpl::stop()
   if (event_thread_.joinable())
     event_thread_.join();
 
+  LOG_INFO("audio isochronous packets: {} with data ({} bytes), {} empty, {} failed (first failure status {})",
+           packets_ok_.load(), bytes_received_.load(), packets_empty_.load(), packets_failed_.load(),
+           first_failure_status_.load() - 1);
+
   for (size_t i = 0; i < transfers_.size(); i++)
   {
     libusb_free_transfer(transfers_[i]);
@@ -445,8 +470,18 @@ void AudioCaptureImpl::handleCompletedTransfer(struct libusb_transfer *transfer)
     const struct libusb_iso_packet_descriptor *pkt = &transfer->iso_packet_desc[p];
     if (pkt->status == LIBUSB_TRANSFER_COMPLETED && pkt->actual_length > 0)
     {
+      packets_ok_++;
+      bytes_received_ += pkt->actual_length;
       unsigned char *data = libusb_get_iso_packet_buffer_simple(transfer, p);
       deliverSamples(data, pkt->actual_length);
+    }
+    else if (pkt->status == LIBUSB_TRANSFER_COMPLETED)
+      packets_empty_++;
+    else
+    {
+      packets_failed_++;
+      int none = 0;
+      first_failure_status_.compare_exchange_strong(none, static_cast<int>(pkt->status) + 1);
     }
   }
 

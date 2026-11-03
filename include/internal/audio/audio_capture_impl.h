@@ -84,6 +84,15 @@ private:
   AudioFrameListener *listener_;
   std::vector<float> partial_frame_;
 
+  // Isochronous packet bookkeeping, logged by stop(): a rate below 16000
+  // samples/s is told apart as lost packets (failed/empty) or as too few
+  // packets scheduled at all (the total is low, none failed).
+  std::atomic<unsigned long> packets_ok_;
+  std::atomic<unsigned long> packets_failed_;
+  std::atomic<unsigned long> packets_empty_;
+  std::atomic<unsigned long> bytes_received_;
+  std::atomic<int> first_failure_status_;
+
   bool deviceFound_;
   int channels_;
   int sample_rate_;
