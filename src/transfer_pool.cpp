@@ -26,6 +26,8 @@
 
 /** @file transfer_pool.cpp Data transfer implementation. */
 
+#include <cstdlib>
+#include <cstring>
 #include <libfreenect2/usb/transfer_pool.h>
 #include <libfreenect2/logging.h>
 
@@ -276,6 +278,36 @@ void IsoTransferPool::fillTransfer(libusb_transfer* transfer)
 void IsoTransferPool::processTransfer(libusb_transfer* transfer)
 {
   unsigned char *ptr = transfer->buffer;
+
+  // LIBFREENECT2_ISO_DEBUG=1: what do the isochronous transfers really bring? (for transports like USB/IP)
+  static const bool iso_debug = std::getenv("LIBFREENECT2_ISO_DEBUG") != nullptr;
+  if (iso_debug)
+  {
+    static unsigned long long transfers = 0;
+    if (transfers++ % 400 == 0)
+    {
+      size_t ok = 0, other = 0, total = 0, nonzero_packets = 0;
+      int first_status = 0;
+      unsigned char head[8] = {0};
+      unsigned char *at = transfer->buffer;
+      for (int i = 0; i < transfer->num_iso_packets; ++i)
+      {
+        auto const &d = transfer->iso_packet_desc[i];
+        if (i == 0) first_status = d.status;
+        if (d.status == LIBUSB_TRANSFER_COMPLETED) ++ok; else ++other;
+        total += d.actual_length;
+        if (d.actual_length > 0)
+        {
+          bool any = false;
+          for (unsigned j = 0; j < d.actual_length && !any; ++j) any = at[j] != 0;
+          if (any) { if (nonzero_packets++ == 0) std::memcpy(head, at, 8); }
+        }
+        at += d.length;
+      }
+      LOG_INFO("iso transfer #{}: {} packets, {} completed, {} other (first status {}), {} bytes in total, {} packets with data other than zeros, first bytes {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+               transfers, transfer->num_iso_packets, ok, other, first_status, total, nonzero_packets, head[0], head[1], head[2], head[3], head[4], head[5], head[6], head[7]);
+    }
+  }
 
   for(size_t i = 0; i < num_packets_; ++i)
   {

@@ -1298,6 +1298,14 @@ Freenect2Device *Freenect2Impl::openDevice(int idx, std::unique_ptr<const Packet
 
   std::unique_ptr<libusb_device_handle, LibusbHandleDeleter> dev_handle_ptr(dev_handle);
 
+  // LIBFREENECT2_NO_RESET=1 leaves the USB reset out, for transports that cannot carry it (USB/IP: the reset is only
+  // emulated on the client side and the Kinect then no longer answers commands)
+  if(attempting_reset && std::getenv("LIBFREENECT2_NO_RESET") != nullptr)
+  {
+    LOG_INFO("LIBFREENECT2_NO_RESET is set, not resetting the device");
+    attempting_reset = false;
+  }
+
   if(attempting_reset)
   {
     // A libusb_reset_device() call is a real USB port-level reset, affecting
