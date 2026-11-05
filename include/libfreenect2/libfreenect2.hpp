@@ -175,6 +175,19 @@ public:
    */
   virtual void setDepthFrameStride(unsigned stride) = 0;
 
+  /** Turn the color stream on or off while the device is streaming (after startStreams()).
+   * Off, no color data is read from the USB connection and nothing is decoded: the JPEG decoding of 1920x1080 frames is
+   * the expensive part. Depth and IR go on undisturbed. startStreams(rgb = true) starts with it on, startStreams(false, ...)
+   * leaves it off. A color frame listener must be set.
+   *
+   * @return true if the stream is in the requested state afterwards, false if the device is not streaming or the USB
+   *         transfers cannot be started.
+   */
+  [[nodiscard]] virtual bool setColorStreamEnabled(bool enabled) = 0;
+
+  /** Whether color transfers are submitted right now. */
+  virtual bool colorStreamEnabled() const = 0;
+
   /** Provide your listener to receive color frames. */
   virtual void setColorFrameListener(FrameListener* rgb_frame_listener) = 0;
 

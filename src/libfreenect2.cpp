@@ -295,6 +295,8 @@ public:
   bool replaceDepthPipeline(std::unique_ptr<PacketPipeline> pipeline) override;
   bool setDepthBackend(std::string_view name, int gpu_device_id) override;
   void setDepthFrameStride(unsigned stride) override;
+  bool setColorStreamEnabled(bool enabled) override;
+  bool colorStreamEnabled() const override;
 
   int nextCommandSeq();
 
@@ -335,6 +337,8 @@ public:
   bool replaceDepthPipeline(std::unique_ptr<PacketPipeline>) override { return false; } // replay buffers belong to the initial processor
   bool setDepthBackend(std::string_view, int) override { return false; }
   void setDepthFrameStride(unsigned) override {}
+  bool setColorStreamEnabled(bool) override { return false; }
+  bool colorStreamEnabled() const override { return false; }
 
   void setColorFrameListener(FrameListener* listener) override;
   void setIrAndDepthFrameListener(FrameListener* listener) override;
@@ -803,6 +807,36 @@ bool Freenect2DeviceImpl::setDepthBackend(std::string_view name, int gpu_device_
 void Freenect2DeviceImpl::setDepthFrameStride(unsigned stride)
 {
   pipeline_->setDepthFrameStride(stride);
+}
+
+bool Freenect2DeviceImpl::colorStreamEnabled() const
+{
+  return rgb_transfer_pool_.enabled();
+}
+
+bool Freenect2DeviceImpl::setColorStreamEnabled(bool enabled)
+{
+  if (state_ != Streaming)
+    return false;
+  if (enabled == rgb_transfer_pool_.enabled())
+    return true;
+
+  if (enabled)
+  {
+    LOG_INFO("submitting rgb transfers...");
+    rgb_transfer_pool_.enableSubmission();
+    if (!rgb_transfer_pool_.submit())
+    {
+      rgb_transfer_pool_.disableSubmission();
+      return false;
+    }
+    return true;
+  }
+
+  LOG_INFO("canceling rgb transfers...");
+  rgb_transfer_pool_.disableSubmission();
+  rgb_transfer_pool_.cancel();
+  return true;
 }
 
 void Freenect2DeviceImpl::setColorFrameListener(libfreenect2::FrameListener* rgb_frame_listener)
